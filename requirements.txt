@@ -1,1 +1,5 @@
 anthropic>=0.40.0
+chardet>=5.0.0
+python-dotenv>=1.0.0
+# crewai>=0.1.0  # Optional - only needed if using LLM-based mapping
+# pandas>=2.0.0  # Not currently used, but may be needed for future enhancements
