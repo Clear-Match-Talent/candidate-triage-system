@@ -1,0 +1,41 @@
+# Sensitive data
+*.csv
+!templates/csv-template.csv
+
+# API keys and credentials
+.env
+*.key
+*.secret
+
+# Output files
+output/*
+!output/.gitkeep
+
+# Test data
+test-data/*
+!test-data/.gitkeep
+
+# Node modules (if Phase 2 is built)
+node_modules/
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

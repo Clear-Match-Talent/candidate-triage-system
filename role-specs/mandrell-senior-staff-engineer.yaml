@@ -1,0 +1,77 @@
+role_name: "Mandrell - Senior/Staff Engineer"
+
+description: |
+  Senior or Staff-level software engineer position for Mandrell.
+  Focus on backend/infrastructure engineering with strong technical depth.
+
+must_haves:
+  - id: location_nyc
+    label: "Location: Within 50 miles of NYC"
+    evidence_fields:
+      - location
+    met_rules:
+      - "Location indicates within 50 miles of NYC (Manhattan, Brooklyn, Queens, Bronx, Staten Island, Jersey City, Hoboken, Weehawken, Fort Lee, etc.)"
+      - "Location mentions NYC boroughs or immediate suburbs"
+    not_met_rules:
+      - "Location explicitly outside NYC metro area (e.g., San Francisco, Boston, Seattle, Austin, Remote-only)"
+      - "Location is in a different US city or international"
+    unknown_rules:
+      - "Location field is missing or empty"
+      - "Location is too vague (e.g., 'United States', 'East Coast', 'Flexible')"
+
+  - id: experience_senior_plus
+    label: "Experience: 5+ years as Senior+ IC Engineer"
+    evidence_fields:
+      - experience_text
+      - title
+      - tenure_dates
+    met_rules:
+      - "Current or recent title includes 'Senior', 'Staff', 'Principal', or 'Lead' Engineer (not Manager)"
+      - "Experience text shows 5+ years in senior IC roles"
+      - "Clear progression to senior levels (e.g., Engineer → Senior → Staff)"
+    not_met_rules:
+      - "All roles are Junior, Mid-level, or Intern"
+      - "Primary experience is as Engineering Manager (not IC)"
+      - "Less than 5 years total experience"
+    unknown_rules:
+      - "Experience field is missing or only shows current role without tenure"
+      - "Titles are vague (e.g., 'Developer', 'Programmer') without seniority indicators"
+      - "Cannot determine tenure or progression"
+
+  - id: school_top_tier
+    label: "Education: Top-tier CS program or equivalent signal"
+    evidence_fields:
+      - education_text
+      - experience_text
+      - company_name
+    met_rules:
+      - "Attended MIT, Stanford, CMU, UC Berkeley, Caltech, Princeton, Harvard, Cornell, UIUC, UWashington for CS/Engineering"
+      - "Attended top international CS programs (e.g., Waterloo, ETH Zurich, IIT, Tsinghua)"
+      - "No degree BUT worked at highly selective companies (e.g., Jane Street, Citadel, OpenAI, DeepMind, FAANG research labs)"
+      - "Strong open-source contributions or competitive programming background (e.g., ICPC finalist)"
+    not_met_rules:
+      - "Education is from non-target school AND no compensating signals (selective company, OSS, competitions)"
+      - "Bootcamp background without subsequent work at top-tier company"
+    unknown_rules:
+      - "Education field is missing or empty"
+      - "School name is present but cannot determine if it's a top-tier program"
+      - "Self-taught with insufficient work history to assess"
+
+decision_policy:
+  proceed: "All must-have criteria are MET"
+  human_review: "At least one criterion is UNKNOWN (missing evidence, cannot determine)"
+  dismiss: "At least one criterion is NOT_MET (clear contradictory evidence)"
+
+output_fields:
+  - overall_decision  # PROCEED | HUMAN_REVIEW | DISMISS
+  - review_focus      # List of criterion IDs that are UNKNOWN
+  - dismiss_reason    # Criterion ID that caused DISMISS
+  - data_gaps         # Missing fields that would help evaluation
+
+evaluation_notes: |
+  CRITICAL POLICY: "Absence of evidence is NOT evidence of absence"
+  - If a field is empty/missing → mark UNKNOWN (not NOT_MET)
+  - Only mark NOT_MET if there is CLEAR CONTRADICTORY EVIDENCE
+  - Err on the side of HUMAN_REVIEW for ambiguous cases
+
+  This prevents false negatives where good candidates are dismissed due to incomplete data.

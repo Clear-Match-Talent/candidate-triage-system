@@ -1,0 +1,4 @@
+linkedin_url,first_name,last_name,location,company_name,title,experience_text,education_text,summary,skills
+https://linkedin.com/in/janesmith,Jane,Smith,Brooklyn NY,Stripe,Senior Software Engineer,"Staff Engineer at Stripe (2021-present). Senior SWE at Airbnb (2018-2021). Engineer at startup (2016-2018).",BS Computer Science - MIT 2016,"Experienced backend engineer focused on payments infrastructure.","Python, Go, PostgreSQL, Kubernetes"
+https://linkedin.com/in/johndev,John,Developer,San Francisco,Google,Software Engineer III,"SWE III at Google (2020-present). Previously at Facebook.",,"Building ML infrastructure.","TensorFlow, Python, C++"
+https://linkedin.com/in/alexeng,Alex,Engineer,Remote,Startup Co,Founding Engineer,"Founding Engineer at Startup Co (2023-present). Built product from 0 to 1.",BS CS - University of Waterloo 2022,"Early-stage builder. YC W23.","TypeScript, React, Node.js"
