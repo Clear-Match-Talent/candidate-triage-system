@@ -1,6 +1,6 @@
 # Candidate Triage System - Project Status
 
-**Last Updated:** 2026-01-25 11:14 UTC by Henry  
+**Last Updated:** 2026-01-25 11:20 UTC by Henry  
 **Phase:** Development & Bug Fixes  
 **Overall Status:** 🟡 In Progress - Fixing Task 003
 
@@ -59,7 +59,7 @@
 ## 🚀 What's Next
 
 ### Immediate (Priority 1)
-1. **Setup GitHub Authentication** - Configure SSH key or PAT so auto-commit works (see `GITHUB_AUTH_SETUP.md`)
+1. ✅ ~~Setup GitHub Authentication~~ - **DONE** (SSH key configured, push working)
 2. **Resolve Task 003** - Either:
    - Fix the test prompt to be unambiguous, OR
    - Debug chatbot logic to understand why it's not creating pending_action
