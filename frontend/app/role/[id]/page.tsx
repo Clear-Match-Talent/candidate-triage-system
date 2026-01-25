@@ -45,27 +45,17 @@ export default function RoleDetail({ params }: { params: Promise<{ id: string }>
       const response = await fetch(`/api/runs/${resolvedParams.id}`);
       
       if (!response.ok) {
-        setError("Failed to fetch run status");
+        if (response.status === 404) {
+          setError("Run not found");
+        } else {
+          setError("Failed to fetch run status");
+        }
         setLoading(false);
         return;
       }
 
-      // The API returns HTML, we need to parse it or modify the backend
-      // For now, let's try to get JSON
-      const contentType = response.headers.get("content-type");
-      
-      if (contentType?.includes("application/json")) {
-        const data = await response.json();
-        setRunStatus(data);
-      } else {
-        // Parse HTML response (temporary solution)
-        const html = await response.text();
-        
-        // Extract run data from HTML (this is a workaround)
-        // We'll need to modify the backend to return JSON
-        setError("Backend needs JSON API support");
-      }
-      
+      const data = await response.json();
+      setRunStatus(data);
       setLoading(false);
     } catch (err) {
       console.error("Error fetching run status:", err);
