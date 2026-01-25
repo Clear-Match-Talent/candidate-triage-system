@@ -15,7 +15,9 @@ Notes:
 
 from __future__ import annotations
 
+import csv
 import json
+import re
 import shutil
 import subprocess
 import threading
@@ -31,6 +33,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
+import os
+from anthropic import Anthropic
+import pandas as pd
+from webapp.main_tool_calling import execute_data_modification, EXECUTE_PYTHON_TOOL
+from webapp import db
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = REPO_ROOT / "runs"
@@ -55,6 +62,9 @@ if STATIC_DIR.exists():
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+# Initialize Anthropic client for chat
+anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
 
 @dataclass
 class RunStatus:
@@ -62,12 +72,32 @@ class RunStatus:
     created_at: float
     run_name: str
     role_label: str
-    state: str  # queued|running|done|error
+    state: str  # queued|running|standardized|evaluating|done|error
     message: str = ""
     outputs: Optional[dict] = None
+    standardized_data: Optional[list] = None  # CSV data for review
+    chat_messages: Optional[list] = None  # Chat history with agent
+    agent_session_key: Optional[str] = None  # Clawdbot session for this run
+    pending_action: Optional[dict] = None  # Proposed data modification waiting for confirmation
 
 
-RUNS: Dict[str, RunStatus] = {}
+# Helper functions for DB <-> RunStatus conversion
+def dict_to_runstatus(data: dict) -> RunStatus:
+    """Convert database dict to RunStatus dataclass"""
+    return RunStatus(**data)
+
+
+def get_run_or_404(run_id: str) -> Optional[RunStatus]:
+    """Get run from DB and convert to RunStatus, return None if not found"""
+    data = db.get_run(run_id)
+    if not data:
+        return None
+    return dict_to_runstatus(data)
+
+
+def save_run_to_db(st: RunStatus) -> None:
+    """Save RunStatus to database"""
+    db.save_run(st)
 
 
 def safe_name(s: str) -> str:
@@ -80,10 +110,76 @@ def safe_name(s: str) -> str:
     return out[:80] if out else "run"
 
 
+def restandardize_run(run_id: str) -> None:
+    """Re-run standardization on existing input files after chat modifications"""
+    st = get_run_or_404(run_id)
+    if not st:
+        return
+    st.state = "running"
+    st.message = "Re-standardizing data..."
+    save_run_to_db(st)
+    
+    run_dir = RUNS_DIR / st.run_name
+    input_dir = run_dir / "input"
+    output_dir = run_dir / "output"
+    
+    # Get all CSV files in input directory
+    input_files = list(input_dir.glob("*.csv"))
+    
+    if not input_files:
+        st.state = "error"
+        save_run_to_db(st)
+        st.message = "No input files found to re-standardize"
+        return
+    
+    python_exe = str(REPO_ROOT / "venv" / "bin" / "python3")
+    
+    try:
+        # Run standardization
+        cmd_ingest = [
+            python_exe,
+            "-m",
+            "ingestion.main",
+        ] + [str(f) for f in input_files] + [
+            "--output-dir",
+            str(output_dir),
+        ]
+        subprocess.run(cmd_ingest, cwd=str(REPO_ROOT), check=True)
+        
+        # Load standardized data
+        standardized = output_dir / "standardized_candidates.csv"
+        standardized_rows = []
+        with open(standardized, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                standardized_rows.append(row)
+        
+        st.state = "standardized"
+        st.message = f"Re-standardization complete. {len(standardized_rows)} candidates ready for review."
+        st.standardized_data = standardized_rows
+        st.outputs = {
+            "standardized": str(standardized.relative_to(REPO_ROOT)),
+            "duplicates": str((output_dir / "duplicates_report.csv").relative_to(REPO_ROOT)) if (output_dir / "duplicates_report.csv").exists() else None,
+        }
+        save_run_to_db(st)
+        
+    except subprocess.CalledProcessError as e:
+        st.state = "error"
+        st.message = f"Re-standardization failed (exit {e.returncode})"
+        save_run_to_db(st)
+    except Exception as e:
+        st.state = "error"
+        st.message = f"Unexpected error during re-standardization: {e}"
+        save_run_to_db(st)
+
+
 def run_pipeline(run_id: str, input_paths: List[Path]) -> None:
-    st = RUNS[run_id]
+    st = get_run_or_404(run_id)
+    if not st:
+        return
     st.state = "running"
     st.message = "Starting…"
+    save_run_to_db(st)
 
     run_dir = RUNS_DIR / st.run_name
     input_dir = run_dir / "input"
@@ -93,6 +189,7 @@ def run_pipeline(run_id: str, input_paths: List[Path]) -> None:
 
     # Copy inputs into run folder
     st.message = "Saving uploads…"
+    save_run_to_db(st)
     for p in input_paths:
         shutil.copy2(p, input_dir / p.name)
 
@@ -109,9 +206,11 @@ def run_pipeline(run_id: str, input_paths: List[Path]) -> None:
     try:
         # 1) ingestion
         st.message = "Standardizing + deduping…"
+        save_run_to_db(st)
         # Use python -m ingestion.main with glob
+        python_exe = str(REPO_ROOT / "venv" / "bin" / "python3")
         cmd_ingest = [
-            "python",
+            python_exe,
             "-m",
             "ingestion.main",
         ] + [str(input_dir / p.name) for p in input_paths] + [
@@ -120,52 +219,39 @@ def run_pipeline(run_id: str, input_paths: List[Path]) -> None:
         ]
         subprocess.run(cmd_ingest, cwd=str(REPO_ROOT), check=True)
 
-        # 2) evaluate
-        st.message = "Evaluating with AI…"
+        # STOP after standardization - load data for review
         standardized = output_dir / "standardized_candidates.csv"
-        evaluated = output_dir / "evaluated.csv"
-        cmd_eval = [
-            "python",
-            "evaluate_v3.py",
-            str(standardized),
-            str(evaluated),
-        ]
-        subprocess.run(cmd_eval, cwd=str(REPO_ROOT), check=True)
-
-        # 3) bucket
-        st.message = "Bucketing results…"
-        cmd_bucket = [
-            "python",
-            "tools/bucket_results.py",
-            str(evaluated),
-            "--outdir",
-            str(output_dir),
-        ]
-        subprocess.run(cmd_bucket, cwd=str(REPO_ROOT), check=True)
-
-        st.state = "done"
-        st.message = "Done"
+        
+        # Load standardized data
+        standardized_rows = []
+        with open(standardized, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                standardized_rows.append(row)
+        
+        st.state = "standardized"
+        st.message = f"Standardization complete. {len(standardized_rows)} candidates ready for review."
+        st.standardized_data = standardized_rows
         st.outputs = {
             "standardized": str(standardized.relative_to(REPO_ROOT)),
-            "evaluated": str(evaluated.relative_to(REPO_ROOT)),
-            "proceed": str((output_dir / "proceed.csv").relative_to(REPO_ROOT)),
-            "human_review": str((output_dir / "human_review.csv").relative_to(REPO_ROOT)),
-            "dismiss": str((output_dir / "dismiss.csv").relative_to(REPO_ROOT)),
             "duplicates": str((output_dir / "duplicates_report.csv").relative_to(REPO_ROOT)) if (output_dir / "duplicates_report.csv").exists() else None,
         }
+        save_run_to_db(st)
 
     except subprocess.CalledProcessError as e:
         st.state = "error"
         st.message = f"Pipeline failed (exit {e.returncode}). Check console logs on the machine running the UI."
+        save_run_to_db(st)
     except Exception as e:
         st.state = "error"
         st.message = f"Unexpected error: {e}"
+        save_run_to_db(st)
 
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     # Show recent runs (latest first)
-    recent = sorted(RUNS.values(), key=lambda r: r.created_at, reverse=True)[:20]
+    recent = [dict_to_runstatus(r) for r in db.list_runs(20)]
     return templates.TemplateResponse(
         "index.html",
         {
@@ -175,7 +261,7 @@ def home(request: Request):
     )
 
 
-@app.post("/run")
+@app.post("/api/run")
 def create_run(
     request: Request,
     run_name: str = Form(default=""),
@@ -197,7 +283,7 @@ def create_run(
         state="queued",
         message="Queued",
     )
-    RUNS[rid] = st
+    save_run_to_db(st)
 
     # Save uploads into a temp folder first
     tmp_dir = RUNS_DIR / "_tmp" / rid
@@ -221,7 +307,7 @@ def create_run(
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
 def run_detail(request: Request, run_id: str):
-    st = RUNS.get(run_id)
+    st = get_run_or_404(run_id)
     if not st:
         return HTMLResponse("Run not found", status_code=404)
 
@@ -238,7 +324,7 @@ def run_detail(request: Request, run_id: str):
 @app.get("/api/runs/{run_id}")
 def run_status_json(run_id: str):
     """JSON API endpoint for run status"""
-    st = RUNS.get(run_id)
+    st = get_run_or_404(run_id)
     if not st:
         return JSONResponse({"error": "Run not found"}, status_code=404)
     
@@ -248,13 +334,13 @@ def run_status_json(run_id: str):
 @app.get("/api/runs")
 def list_runs_json():
     """JSON API endpoint to list all runs"""
-    recent = sorted(RUNS.values(), key=lambda r: r.created_at, reverse=True)[:20]
+    recent = [dict_to_runstatus(r) for r in db.list_runs(20)]
     return JSONResponse([asdict(r) for r in recent])
 
 
 @app.get("/download/{run_id}/{kind}")
 def download(run_id: str, kind: str):
-    st = RUNS.get(run_id)
+    st = get_run_or_404(run_id)
     if not st or not st.outputs:
         return HTMLResponse("Not ready", status_code=404)
 
@@ -268,3 +354,468 @@ def download(run_id: str, kind: str):
         return HTMLResponse("File missing on disk", status_code=404)
 
     return FileResponse(path)
+
+
+def run_evaluation(run_id: str) -> None:
+    """Run AI evaluation and bucketing after human approval"""
+    st = get_run_or_404(run_id)
+    if not st:
+        return
+    st.state = "evaluating"
+    st.message = "Starting AI evaluation..."
+    save_run_to_db(st)
+    
+    run_dir = RUNS_DIR / st.run_name
+    output_dir = run_dir / "output"
+    standardized = output_dir / "standardized_candidates.csv"
+    evaluated = output_dir / "evaluated.csv"
+    
+    python_exe = str(REPO_ROOT / "venv" / "bin" / "python3")
+    
+    try:
+        # 2) evaluate
+        st.message = "Evaluating with AI…"
+        cmd_eval = [
+            python_exe,
+            "evaluate_v3.py",
+            str(standardized),
+            str(evaluated),
+        ]
+        subprocess.run(cmd_eval, cwd=str(REPO_ROOT), check=True)
+
+        # 3) bucket
+        st.message = "Bucketing results…"
+        cmd_bucket = [
+            python_exe,
+            "tools/bucket_results.py",
+            str(evaluated),
+            "--outdir",
+            str(output_dir),
+        ]
+        subprocess.run(cmd_bucket, cwd=str(REPO_ROOT), check=True)
+
+        st.state = "done"
+        st.message = "Evaluation complete"
+        st.outputs = {
+            "standardized": str(standardized.relative_to(REPO_ROOT)),
+            "evaluated": str(evaluated.relative_to(REPO_ROOT)),
+            "proceed": str((output_dir / "proceed.csv").relative_to(REPO_ROOT)),
+            "human_review": str((output_dir / "human_review.csv").relative_to(REPO_ROOT)),
+            "dismiss": str((output_dir / "dismiss.csv").relative_to(REPO_ROOT)),
+            "duplicates": str((output_dir / "duplicates_report.csv").relative_to(REPO_ROOT)) if (output_dir / "duplicates_report.csv").exists() else None,
+        }
+        st.standardized_data = None  # Clear to save memory
+        save_run_to_db(st)
+
+    except subprocess.CalledProcessError as e:
+        st.state = "error"
+        st.message = f"Evaluation failed (exit {e.returncode}). Check console logs."
+        save_run_to_db(st)
+    except Exception as e:
+        st.state = "error"
+        st.message = f"Unexpected error: {e}"
+        save_run_to_db(st)
+
+
+@app.post("/api/runs/{run_id}/approve")
+def approve_run(run_id: str):
+    """Approve standardized data and trigger AI evaluation"""
+    st = get_run_or_404(run_id)
+    if not st:
+        return JSONResponse({"error": "Run not found"}, status_code=404)
+    
+    if st.state != "standardized":
+        return JSONResponse({"error": f"Cannot approve run in state: {st.state}"}, status_code=400)
+    
+    # Run evaluation in background thread
+    t = threading.Thread(target=run_evaluation, args=(run_id,), daemon=True)
+    t.start()
+    
+    return JSONResponse({"status": "approved", "message": "Evaluation started"})
+
+
+@app.get("/api/runs/{run_id}/chat")
+def get_chat_history(run_id: str):
+    """Get chat history for a run"""
+    st = get_run_or_404(run_id)
+    if not st:
+        return JSONResponse({"error": "Run not found"}, status_code=404)
+    
+    return JSONResponse({"messages": st.chat_messages or []})
+
+
+@app.post("/api/runs/{run_id}/chat")
+async def send_chat_message(run_id: str, request: Request):
+    """Send a message to the data assistant"""
+    st = get_run_or_404(run_id)
+    if not st:
+        return JSONResponse({"error": "Run not found"}, status_code=404)
+    
+    body = await request.json()
+    user_message = body.get("message", "")
+    
+    if not user_message:
+        return JSONResponse({"error": "Message cannot be empty"}, status_code=400)
+    
+    # Initialize chat history if needed
+    if st.chat_messages is None:
+        st.chat_messages = []
+    
+    # Add user message
+    st.chat_messages.append({
+        "role": "user",
+        "content": user_message,
+        "timestamp": time.time()
+    })
+    
+    # Generate assistant response
+    assistant_response = await handle_chat_message(run_id, user_message, st)
+    
+    # Add assistant message
+    st.chat_messages.append({
+        "role": "assistant",
+        "content": assistant_response,
+        "timestamp": time.time()
+    })
+
+    save_run_to_db(st)
+    
+    return JSONResponse({"response": assistant_response})
+
+
+async def handle_chat_message(run_id: str, message: str, st: RunStatus) -> str:
+    """Process user message and generate response using Claude with tool calling"""
+
+    def normalize_field_name(text: str) -> str:
+        cleaned = re.sub(r"[^a-z0-9_ ]+", " ", (text or "").lower())
+        cleaned = cleaned.replace("_", " ")
+        return " ".join(cleaned.split())
+
+    def find_field(fields: List[str], name: str) -> Optional[str]:
+        if not name:
+            return None
+        target = normalize_field_name(name)
+        for field in fields:
+            if normalize_field_name(field) == target:
+                return field
+        return None
+
+    def format_pending_action_response(explanation: str, code: str) -> str:
+        return (
+            f"{explanation}\n\n"
+            f"Proposed code:\n```python\n{code}\n```\n\n"
+            "Reply **\"run\"** to apply this change, or describe a different modification."
+        )
+
+    def ensure_standardized_data_loaded() -> bool:
+        if st.standardized_data:
+            return True
+        run_dir = RUNS_DIR / st.run_name
+        standardized_csv = run_dir / "output" / "standardized_candidates.csv"
+        if not standardized_csv.exists():
+            return False
+        standardized_rows = []
+        with open(standardized_csv, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                standardized_rows.append(row)
+        if not standardized_rows:
+            return False
+        st.standardized_data = standardized_rows
+        save_run_to_db(st)
+        return True
+
+    def derive_pending_action_from_message(user_message: str) -> Optional[Dict[str, str]]:
+        if not ensure_standardized_data_loaded():
+            return None
+        if not st.standardized_data:
+            return None
+
+        fields = list(st.standardized_data[0].keys())
+        message_lower = user_message.lower()
+
+        col_match = re.search(r"column\s+([a-z])", message_lower)
+        if not col_match:
+            return None
+
+        col_letter = col_match.group(1).upper()
+        col_index = ord(col_letter) - ord("A")
+        if col_index < 0 or col_index >= len(fields):
+            return None
+
+        target_field = fields[col_index]
+
+        if any(keyword in message_lower for keyword in ["clear", "delete", "remove", "empty", "blank", "erase"]):
+            code = f"df.iloc[:, {col_index}] = ''"
+            explanation = f"This will clear all values in column {col_letter} ({target_field})."
+            return {"code": code, "explanation": explanation}
+
+        if any(keyword in message_lower for keyword in ["fill", "set", "populate", "update", "overwrite"]):
+            source_match = re.search(r"(?:with|to)\s+(.+)", message_lower)
+            source_text = source_match.group(1).strip() if source_match else ""
+            source_text = re.sub(r"\s+for\s+all\s+candidates.*", "", source_text).strip()
+
+            source_field = find_field(fields, source_text)
+            if not source_field and source_text:
+                source_field = find_field(fields, source_text.replace(" ", "_"))
+
+            if source_field:
+                code = f"df.iloc[:, {col_index}] = df['{source_field}']"
+                explanation = (
+                    f"This will set column {col_letter} ({target_field}) to the values from "
+                    f"{source_field} for all candidates."
+                )
+                return {"code": code, "explanation": explanation}
+
+            quoted = re.search(r"['\"]([^'\"]+)['\"]", user_message)
+            if quoted:
+                literal_value = quoted.group(1)
+                code = f"df.iloc[:, {col_index}] = {json.dumps(literal_value)}"
+                explanation = (
+                    f"This will set all values in column {col_letter} ({target_field}) to \"{literal_value}\"."
+                )
+                return {"code": code, "explanation": explanation}
+
+        return None
+    
+    message_lower = message.lower().strip()
+    
+    # Check if user is confirming a pending action
+    if message_lower in ["run", "yes", "confirm", "approve", "go", "do it", "apply"]:
+        if st.pending_action:
+            # Execute the pending Python code
+            run_dir = RUNS_DIR / st.run_name
+            result = execute_data_modification(
+                st.pending_action['code'],
+                st.standardized_data,
+                run_dir
+            )
+            
+            if result['success']:
+                # Update in-memory data
+                st.standardized_data = result['modified_data']
+                
+                # Clear pending action
+                st.pending_action = None
+                
+                # Stay in standardized state (no need to re-run pipeline)
+                st.state = "standardized"
+                save_run_to_db(st)
+                st.message = f"Modification complete. {len(result['modified_data'])} candidates ready for review."
+                
+                return f"✅ Applied! {result['message']} The table will refresh in a moment."
+            else:
+                return f"❌ Error applying changes: {result['message']}\n\nPlease try rephrasing your request or describe the issue differently."
+        else:
+            return "There's no pending action to apply. Please describe what you'd like to change in the data, and I'll propose a fix for you to confirm."
+    
+    if not ensure_standardized_data_loaded():
+        return (
+            "I don't have standardized candidate data loaded for this run yet. "
+            "Please run the standardization step first, then tell me what you'd like to change."
+        )
+
+    # Build context about the data
+    data_summary = ""
+    if st.standardized_data and len(st.standardized_data) > 0:
+        total_rows = len(st.standardized_data)
+        fields = list(st.standardized_data[0].keys())
+        
+        # Get column index mapping (A=0, B=1, etc.)
+        column_letters = {chr(65 + i): i for i in range(len(fields))}
+        field_column_map = "\n".join([f"  Column {chr(65+i)} ({i}): {field}" for i, field in enumerate(fields)])
+        
+        # Sample first few rows for context
+        sample_rows = st.standardized_data[:3]
+        
+        data_summary = f"""You are a data assistant helping to modify standardized candidate data.
+
+Current dataset:
+- Total candidates: {total_rows}
+- Fields/Columns:
+{field_column_map}
+
+Sample data (first 3 rows):
+{json.dumps(sample_rows, indent=2)}
+
+The user will describe changes they want to make to the data. Your job is to:
+1. Understand what they want to change
+2. Use the execute_python tool to write Python code that makes the change
+3. Explain what you're going to do in simple terms
+4. The user will reply "run" to confirm and apply the changes
+
+When using execute_python:
+- You have access to a pandas DataFrame called 'df' with all the data
+- For column letters (G, H, etc.), use df.iloc[:, index] where index = ord(letter) - ord('A')
+- Be precise and handle edge cases
+- Always modify df in place
+
+Example: "clear column G and H" →
+code: "df.iloc[:, 6] = ''; df.iloc[:, 7] = ''"
+explanation: "This will clear all data in columns G (experience_text) and H (education_text)."
+"""
+    
+    # Get previous messages for context
+    previous_messages = []
+    if st.chat_messages:
+        for msg in st.chat_messages[-6:]:  # Last 6 messages for context
+            previous_messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+    
+    # If the request looks like a data modification, try to derive a pending action directly.
+    derived_action = derive_pending_action_from_message(message)
+    if derived_action:
+        st.pending_action = {
+            "code": derived_action["code"],
+            "explanation": derived_action["explanation"],
+            "timestamp": time.time()
+        }
+        save_run_to_db(st)
+        return format_pending_action_response(derived_action["explanation"], derived_action["code"])
+
+    # Call Claude with tool calling
+    try:
+        response = anthropic_client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=2000,
+            system=data_summary,
+            tools=[EXECUTE_PYTHON_TOOL],
+            messages=previous_messages + [{"role": "user", "content": message}]
+        )
+        
+        # Check if Claude wants to use a tool
+        if response.stop_reason == "tool_use":
+            tool_use = next((block for block in response.content if block.type == "tool_use"), None)
+            
+            if tool_use and tool_use.name == "execute_python":
+                code = tool_use.input['code']
+                explanation = tool_use.input['explanation']
+                
+                # Store the pending action
+                st.pending_action = {
+                    "code": code,
+                    "explanation": explanation,
+                    "timestamp": time.time()
+                }
+                save_run_to_db(st)
+                
+                # Return explanation + confirmation prompt
+                return format_pending_action_response(explanation, code)
+        
+        # Otherwise, return Claude's text response, but avoid promising a run if nothing is pending.
+        text_response = next((block.text for block in response.content if hasattr(block, 'text')), "")
+        if text_response and "run" in text_response.lower() and not st.pending_action:
+            return (
+                "I can propose a change, but I don't have a saved action yet. "
+                "Please describe the exact modification you want (e.g., 'clear column G')."
+            )
+        return text_response if text_response else "I'm not sure how to help with that. Can you describe what you'd like to change in the data?"
+        
+    except Exception as e:
+        import traceback
+        return f"Error communicating with AI: {str(e)}\n\n{traceback.format_exc()}"
+
+
+def apply_data_modification(run_id: str, action: dict, st: RunStatus) -> str:
+    """Apply a data modification action"""
+    
+    user_request = action.get('user_request', '')
+    description = action.get('description', '')
+    request_lower = user_request.lower()
+    
+    # Try to parse the request and apply changes
+    # Handle column clearing/deletion/removal/regeneration
+    if any(keyword in request_lower for keyword in ['clear', 'delete', 'remove', 'empty', 'regenerate', 'erase']):
+        # Try to identify which column/field
+        # Look for column letter or field name
+        
+        if st.standardized_data and len(st.standardized_data) > 0:
+            fields = list(st.standardized_data[0].keys())
+            
+            # Try to identify which column/field to modify
+            field_to_clear = None
+            
+            # First, look for column letter in user request (handle typos like "cloumn")
+            # Pattern: (clo or col) + optional letters + space + single letter
+            col_match = re.search(r'(?:clo|col)\w*\s+([a-z])', request_lower)
+            if col_match:
+                col_letter = col_match.group(1).upper()
+                col_index = ord(col_letter) - ord('A')
+                if 0 <= col_index < len(fields):
+                    field_to_clear = fields[col_index]
+            
+            # Also check Claude's description for field name hints
+            if not field_to_clear and description:
+                for field in fields:
+                    if field.lower() in description.lower() or field in description:
+                        field_to_clear = field
+                        break
+            
+            # If no column letter, look for field names mentioned in the request
+            if not field_to_clear:
+                for field in fields:
+                    # Match field name with underscores or as separate words
+                    field_pattern = field.lower().replace('_', '[ _]')
+                    if re.search(field_pattern, request_lower):
+                        field_to_clear = field
+                        break
+            
+            if field_to_clear:
+                # Update in-memory data
+                for row in st.standardized_data:
+                    row[field_to_clear] = ""
+                
+                # Update the input CSV files to reflect the change
+                run_dir = RUNS_DIR / st.run_name
+                input_dir = run_dir / "input"
+                
+                files_modified = 0
+                # Modify the original input files
+                for input_file in input_dir.glob("*.csv"):
+                    try:
+                        rows = []
+                        fieldnames = None
+                        with open(input_file, 'r', encoding='utf-8') as f:
+                            reader = csv.DictReader(f)
+                            fieldnames = reader.fieldnames
+                            for row in reader:
+                                # Clear the field if it exists (case-insensitive match)
+                                for key in list(row.keys()):
+                                    if key.lower() == field_to_clear.lower():
+                                        row[key] = ""
+                                rows.append(row)
+                        
+                        if rows and fieldnames:
+                            with open(input_file, 'w', newline='', encoding='utf-8') as f:
+                                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                                writer.writeheader()
+                                writer.writerows(rows)
+                            files_modified += 1
+                    except Exception as e:
+                        # Log error but continue with other files
+                        print(f"Error modifying {input_file}: {e}")
+                
+                if files_modified == 0:
+                    return f"Warning: Found field '{field_to_clear}' but couldn't modify input files. Field may not exist in source CSVs."
+                
+                # Trigger re-standardization in background
+                st.state = "running"
+                save_run_to_db(st)
+                st.message = f"Re-running standardization after clearing '{field_to_clear}'..."
+                st.standardized_data = None  # Clear old data
+                
+                # Run re-standardization in background
+                t = threading.Thread(target=restandardize_run, args=(run_id,), daemon=True)
+                t.start()
+                
+                return f"Applied: Cleared field '{field_to_clear}'. Re-running standardization now. The table will refresh automatically when complete."
+            else:
+                return "Could not identify which field to modify. Please be more specific about which column or field name you want to change."
+    
+    # For other types of modifications, return not implemented message
+    return (
+        "I understood your request but I'm not yet able to apply this type of modification automatically. "
+        "Currently I can only clear/empty columns. For more complex changes, please export the CSV and modify it manually."
+    )

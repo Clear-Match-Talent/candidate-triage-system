@@ -1,48 +1,39 @@
 # Implementation Status
 
-## Phase 1: Clay-Compatible Templates ✅ COMPLETE
+## Current: Native Python Runner ✅ WORKING
 
-All Phase 1 deliverables have been created and are ready to use.
+The system currently runs natively via Python scripts in this repo (ingestion + evaluation). Clay is a future integration option.
 
-### Completed Files
+### Core Components
 
-#### 1. CSV Template ✅
+#### 1) CSV Ingestion + Standardization ✅
+**Folder**: `ingestion/`
+- Ingests candidate CSVs from multiple sources
+- Standardizes to the required schema
+- De-dupes by LinkedIn URL
+- Outputs `output/standardized_candidates.csv`
+
+#### 2) Evaluator Runner ✅
+**File**: `evaluate_v3.py` (current)
+- Reads standardized candidates CSV
+- Calls Anthropic (requires `ANTHROPIC_API_KEY`)
+- Writes evaluated output CSV with per-criterion JSON + an overall decision
+
+#### 3) CSV Template ✅
 **File**: `templates/csv-template.csv`
-- Sample CSV with required and optional columns
-- 3 example candidates showing different scenarios
-- Ready to copy and populate with real data
+- Example of the standardized schema
 
-#### 2. Role Specification ✅
+#### 4) Role Specification ✅
 **File**: `role-specs/mandrell-senior-staff-engineer.yaml`
-- Complete role spec with 3 must-have criteria:
-  - Location (NYC metro)
-  - Experience (5+ years Senior+ IC)
-  - Education (top-tier CS or equivalent signals)
-- Decision policy defined
-- Evidence field mappings configured
+- Example must-haves + policy
 
-#### 3. Clay Prompt Templates ✅
-**File**: `clay-templates/evaluation-prompts.md`
-- 3 complete AI prompts (one per criterion)
-- Overall decision formula (JavaScript)
-- 2 optional helper formulas (review_focus, dismiss_reason)
-- Detailed configuration instructions for each column
+#### 5) Clay Templates (Future) 💤
+**Folder**: `clay-templates/`
+- Prompt templates + setup guide for a future Clay-based operator flow
 
-#### 4. Clay Setup Guide ✅
-**File**: `clay-templates/setup-guide.md`
-- Step-by-step instructions for Clay setup
-- Troubleshooting section
-- Cost estimation
-- Tips for success
-- Complete checklist
-
-#### 5. README ✅
+#### 6) README ✅
 **File**: `README.md`
-- Quick start guide
-- File structure overview
-- Usage examples
-- Customization instructions
-- Troubleshooting guide
+- Updated to reflect native run as current; Clay as future
 
 ---
 
@@ -50,28 +41,17 @@ All Phase 1 deliverables have been created and are ready to use.
 
 ### Immediate Next Steps (10 minutes)
 
-1. **Export candidates from your sourcing tool**
-   - RecruitCRM, SeekOut, LinkedIn Recruiter, etc.
-   - Get at least these columns: linkedin_url, first_name, last_name, location, company, title
-   - Save as CSV
-
-2. **Open Clay and create new table**
-   - Import your CSV
-   - Verify columns loaded correctly
-
-3. **Start with 10 test candidates**
-   - Filter your table to 10 rows
-   - Follow `clay-templates/setup-guide.md` Step 3
-   - Create the first criterion column (location)
-   - Test and verify JSON output looks correct
-
-### Full Setup (30 minutes)
-
-1. Complete all 3 criterion columns
-2. Add overall decision formula column
-3. Run on all candidates
-4. Export results
-5. Review PROCEED and HUMAN_REVIEW candidates
+1. **Export candidates from your sourcing tool** (SeekOut, LinkedIn Recruiter, etc.)
+2. **Run ingestion** to standardize the export:
+   ```bash
+   pip install -r requirements.txt
+   python -m ingestion.main path/to/export.csv --output-dir output/
+   ```
+3. **Run evaluation** on the standardized CSV:
+   ```bash
+   python evaluate_v3.py output/standardized_candidates.csv output/evaluated.csv
+   ```
+4. Open `output/evaluated.csv` and sanity-check outcomes + reasons.
 
 ---
 
@@ -89,9 +69,11 @@ Before processing your full candidate list, verify:
 
 ---
 
-## Phase 2: Standalone Tool ⏸️ NOT STARTED
+## Future Option: Clay Operator Flow ⏸️ NOT CURRENT
 
-Phase 2 (TypeScript CLI tool) has not been started yet.
+Clay templates exist in `clay-templates/`, but we are not running this workflow in Clay today.
+
+If/when we switch to Clay, we’ll update the docs and SOP to treat Clay as the default operator surface.
 
 ### When to Start Phase 2
 

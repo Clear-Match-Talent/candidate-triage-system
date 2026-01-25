@@ -1,0 +1,9 @@
+{
+  "run_id": "c171e6f5f9",
+  "run_name": "fix_test",
+  "role_label": "Fix Test Role",
+  "created_at": 1769324901.191697,
+  "input_files": [
+    "test_candidatescsv.csv"
+  ]
+}

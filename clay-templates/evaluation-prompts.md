@@ -1,4 +1,7 @@
-# Clay Evaluation Prompt Templates
+# Clay Evaluation Prompt Templates (Future Integration)
+
+> Status: **Not the current workflow.**
+> Today, this system runs natively via Python in this repo. These templates are kept as a **future option** to run the same evaluation logic inside Clay.
 
 These prompts are designed to be used in Clay's "Use AI" enrichment columns. Each criterion gets its own column.
 

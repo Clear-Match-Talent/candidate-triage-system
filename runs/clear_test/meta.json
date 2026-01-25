@@ -1,0 +1,9 @@
+{
+  "run_id": "cbd5fed5a8",
+  "run_name": "clear_test",
+  "role_label": "Clear Test",
+  "created_at": 1769328515.1543052,
+  "input_files": [
+    "test_smallcsv.csv"
+  ]
+}

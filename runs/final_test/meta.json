@@ -1,0 +1,9 @@
+{
+  "run_id": "a979219a1a",
+  "run_name": "final_test",
+  "role_label": "Final Test",
+  "created_at": 1769330373.160679,
+  "input_files": [
+    "test_smallcsv.csv"
+  ]
+}

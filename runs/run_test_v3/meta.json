@@ -1,0 +1,9 @@
+{
+  "run_id": "bc533e8778",
+  "run_name": "run_test_v3",
+  "role_label": "Run Test",
+  "created_at": 1769329716.7043848,
+  "input_files": [
+    "test_smallcsv.csv"
+  ]
+}

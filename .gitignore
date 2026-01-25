@@ -15,10 +15,13 @@ output/*
 test-data/*
 !test-data/.gitkeep
 
-# Node modules (if Phase 2 is built)
+# Node modules and Next.js
 node_modules/
 dist/
 build/
+frontend/.next/
+frontend/out/
+.next/
 
 # OS files
 .DS_Store
@@ -34,6 +37,9 @@ desktop.ini
 # Python
 __pycache__/
 *.pyc
+venv/
+*.db
+*.db-journal
 
 # Logs
 *.log
@@ -43,3 +49,7 @@ logs/
 *.tmp
 *.temp
 .cache/
+
+# Runtime data
+runs/
+plans/

@@ -1,0 +1,9 @@
+{
+  "run_id": "847d402191",
+  "run_name": "smoketest_ui2",
+  "role_label": "Template CSV test 2",
+  "created_at": 1769292713.0710893,
+  "input_files": [
+    "csv-templatecsv.csv"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "run_id": "7ce6df1a0a",
+  "run_name": "auto_restandardize_test",
+  "role_label": "Auto Test",
+  "created_at": 1769329075.3761206,
+  "input_files": [
+    "test_smallcsv.csv"
+  ]
+}

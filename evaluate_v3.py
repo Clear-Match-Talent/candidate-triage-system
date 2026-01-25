@@ -427,9 +427,24 @@ def main():
     # Write output CSV
     print(f"\nWriting results to {output_file}...")
     if results:
-        with open(output_file, 'w', encoding='utf-8', newline='') as f:
-            fieldnames = list(results[0].keys())
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+        # Build fieldnames from union of keys (preserve first-seen order).
+        # This prevents crashes when the first row is an ERROR row (which may not
+        # include criterion_* fields) but later rows do.
+        fieldnames: list[str] = []
+        seen = set()
+        for row in results:
+            for k in row.keys():
+                if k not in seen:
+                    fieldnames.append(k)
+                    seen.add(k)
+
+        from pathlib import Path
+        out_path = Path(output_file)
+        if out_path.parent and str(out_path.parent) not in (".", ""):
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(out_path, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
             writer.writeheader()
             writer.writerows(results)
 

@@ -1,6 +1,6 @@
 # CSV Ingestion and Standardization System
 
-A system for ingesting candidate CSV files from multiple sources (SeekOut, Pin Wrangle, Clay, RecruitCRM) and standardizing them into a unified format.
+A system for ingesting candidate CSV files from multiple sources (SeekOut, Pin Wrangle, Clay, etc.) and standardizing them into a unified format.
 
 ## Quick Start
 

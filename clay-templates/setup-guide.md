@@ -1,4 +1,7 @@
-# Clay Setup Guide - Candidate Triage System
+# Clay Setup Guide (Future Integration) — Candidate Triage System
+
+> Status: **Not the current workflow.**
+> Today, this system runs natively via Python in this repo. This document is kept as a **future option** to run the same evaluation logic inside Clay.
 
 This guide walks you through setting up the candidate triage system in Clay using the provided prompt templates.
 
@@ -8,7 +11,7 @@ This guide walks you through setting up the candidate triage system in Clay usin
 
 - Clay account with AI credits
 - Anthropic API access enabled in Clay
-- CSV export from your sourcing tool (RecruitCRM, SeekOut, LinkedIn Recruiter, etc.)
+- CSV export from your sourcing tool (SeekOut, LinkedIn Recruiter, etc.)
 
 ---
 
@@ -16,7 +19,7 @@ This guide walks you through setting up the candidate triage system in Clay usin
 
 ### Option A: Use Your Existing Export
 
-1. Export candidates from your sourcing tool (RecruitCRM, SeekOut, etc.)
+1. Export candidates from your sourcing tool (SeekOut, LinkedIn Recruiter, etc.)
 2. Open the CSV and identify which columns map to our required fields
 3. Rename columns to match our template OR note the mapping for later
 

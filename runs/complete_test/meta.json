@@ -1,0 +1,9 @@
+{
+  "run_id": "f1819f9fd7",
+  "run_name": "complete_test",
+  "role_label": "Complete Test",
+  "created_at": 1769324969.9285896,
+  "input_files": [
+    "test_candidatescsv.csv"
+  ]
+}

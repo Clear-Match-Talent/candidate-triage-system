@@ -1,0 +1,9 @@
+{
+  "run_id": "9db2d238e4",
+  "run_name": "test_standardization",
+  "role_label": "Test Role",
+  "created_at": 1769326161.4035113,
+  "input_files": [
+    "test_smallcsv.csv"
+  ]
+}

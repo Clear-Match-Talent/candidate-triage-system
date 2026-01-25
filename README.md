@@ -2,35 +2,55 @@
 
 A candidate evaluation system that uses LLM-assisted reasoning to triage CSV exports against role specifications.
 
-## Quick Start (Phase 1 - Clay Templates)
+## Quick Start (Current — Native Python Runner)
 
-**Fastest path to get started** - leverages your existing Clay subscription.
+This repo currently runs **natively** (from a terminal / Cursor / local machine). Clay is a **future integration**, not the current workflow.
 
 ### What You Need
-1. A CSV export of candidates (from RecruitCRM, SeekOut, LinkedIn Recruiter, etc.)
-2. Clay account with AI credits
-3. 30 minutes for initial setup
+1. A CSV export of candidates (SeekOut, LinkedIn Recruiter, Pin Wrangle, etc.)
+2. Python 3.x
+3. An Anthropic API key (`ANTHROPIC_API_KEY`)
 
-### Setup Steps
+### Setup
 
-1. **Prepare your CSV** using the template in `templates/csv-template.csv`
-   - Required columns: `linkedin_url`, `first_name`, `last_name`, `location`, `company_name`, `title`
-   - Optional: `experience_text`, `education_text`, `summary`, `skills`
+```bash
+pip install -r requirements.txt
+```
 
-2. **Follow the Clay setup guide**: `clay-templates/setup-guide.md`
-   - Import CSV to Clay
-   - Create 3 AI enrichment columns using prompts from `clay-templates/evaluation-prompts.md`
-   - Create decision formula column
-   - Export results
+Set your API key:
 
-3. **Review outputs**
-   - `PROCEED` - All criteria met, ready for outreach
-   - `HUMAN_REVIEW` - Missing data, needs manual check
-   - `DISMISS` - Failed at least one criterion
+- macOS/Linux:
+```bash
+export ANTHROPIC_API_KEY="..."
+```
 
-### Cost
-- **Clay**: ~$0 marginal cost (included in subscription)
-- For 100 candidates: ~$1-2 in AI credits
+- Windows (PowerShell):
+```powershell
+$env:ANTHROPIC_API_KEY = "..."
+```
+
+### Run (end-to-end)
+
+1) **Standardize/clean your input CSV(s)** into the required schema:
+
+```bash
+python -m ingestion.main path/to/export.csv --output-dir output/
+```
+
+This writes:
+- `output/standardized_candidates.csv`
+- `output/duplicates_report.csv` (if duplicates found)
+
+2) **Evaluate candidates against the role spec**:
+
+```bash
+python evaluate_v3.py output/standardized_candidates.csv output/evaluated.csv
+```
+
+3) **Review outputs**
+- `PROCEED` — all criteria met, ready for outreach
+- `HUMAN_REVIEW` — at least one criterion unknown/ambiguous; a human must verify
+- `DISMISS` — clearly fails at least one must-have
 
 ---
 
@@ -38,16 +58,22 @@ A candidate evaluation system that uses LLM-assisted reasoning to triage CSV exp
 
 ```
 candidate-triage-system/
-├── README.md                           # This file
+├── README.md
+├── requirements.txt
+├── ingestion/                          # CSV ingestion + standardization (multi-source)
+├── evaluate_v3.py                      # Current evaluator runner (native)
+├── evaluate_v2.py                      # Older iteration
+├── evaluate.py                         # Oldest iteration
+├── normalize_csv.py                    # Lightweight normalizer (legacy)
 ├── templates/
 │   └── csv-template.csv                # Sample CSV with required columns
 ├── role-specs/
-│   └── mandrell-senior-staff-engineer.yaml  # Role specification
-├── clay-templates/
-│   ├── evaluation-prompts.md           # AI prompts for Clay columns
-│   └── setup-guide.md                  # Step-by-step Clay setup
-├── test-data/                          # (empty - add your test CSVs here)
-└── output/                             # (empty - exported results go here)
+│   └── mandrell-senior-staff-engineer.yaml  # Example role specification
+├── clay-templates/                     # FUTURE integration docs/templates
+│   ├── evaluation-prompts.md
+│   └── setup-guide.md
+├── test-data/
+└── output/                             # Local run outputs (standardized + evaluated)
 ```
 
 ---
@@ -74,34 +100,26 @@ The system evaluates candidates against 3 must-have criteria defined in `role-sp
 
 ## How It Works
 
-### Phase 1: Clay (Current Implementation)
+### Current: Native Python (This Repo)
 
-1. Import CSV to Clay table
-2. Create AI enrichment columns (one per criterion)
-3. Each column evaluates one criterion and returns JSON:
-   ```json
-   {
-     "status": "MET" | "NOT_MET" | "UNKNOWN",
-     "reason": "Brief explanation",
-     "evidence": "Quote from candidate data"
-   }
-   ```
-4. Formula column combines results into overall decision
-5. Export results CSV
+1. Ingest/standardize one or more CSV exports into a unified schema (`ingestion/`)
+2. Run the evaluator script (currently `evaluate_v3.py`)
+3. Write an output CSV with per-criterion JSON + an overall decision
 
-**Pros**: Fast setup, uses existing subscription, familiar UI
-**Cons**: Manual setup per role, slower for large batches
+Each criterion produces JSON like:
+```json
+{
+  "status": "MET" | "NOT_MET" | "UNKNOWN",
+  "reason": "Brief explanation",
+  "evidence": "Quote from candidate data"
+}
+```
 
-### Phase 2: Standalone Tool (Future)
+### Future: Clay (Possible Integration)
 
-Build a TypeScript CLI tool for automation at scale.
+The `clay-templates/` folder contains templates and a setup guide for running the same evaluation logic inside Clay.
 
-**When to build Phase 2**:
-- Processing 500+ candidates per batch regularly
-- Managing multiple open roles
-- Need CI/CD integration
-
-See the original plan document for Phase 2 architecture.
+This is **not** the current workflow. It’s a future option if you want a UI-first process or faster operator onboarding.
 
 ---
 
@@ -124,7 +142,7 @@ More data = better evaluation accuracy. Missing optional columns will result in 
 ## Usage Examples
 
 ### Example 1: Basic Flow
-1. Export 100 candidates from RecruitCRM
+1. Export 100 candidates from your sourcing tool
 2. Import to Clay
 3. Run evaluation (3-5 minutes)
 4. Results:
@@ -184,35 +202,38 @@ Edit the YAML file's `must_haves` section:
 
 ---
 
-## Cost Comparison
+## Cost Notes
 
-| Batch Size | Clay Cost | Direct API (est.) |
-|------------|-----------|-------------------|
-| 100 candidates | ~$1-2 | ~$2-3 |
-| 500 candidates | ~$5-10 | ~$12-15 |
-| 1000 candidates | ~$10-20 | ~$25-30 |
+Current runs use the **Anthropic API directly** (via Python). Costs depend on:
+- how many candidates you run
+- how many criteria you evaluate
+- which model you choose
 
-Clay is cost-effective for batches under 500. Consider Phase 2 for larger scale.
+If/when we move to Clay, Clay’s credit model will apply and may be cheaper for smaller batches.
 
 ---
 
-## Support
+## Support / Docs
 
-Questions or issues? Check:
-1. `clay-templates/setup-guide.md` - detailed Clay instructions
-2. `clay-templates/evaluation-prompts.md` - exact prompts and formulas
-3. `role-specs/mandrell-senior-staff-engineer.yaml` - criterion definitions
-4. `templates/csv-template.csv` - example data format
+Start here:
+1. `ingestion/README.md` — how to ingest + standardize exports
+2. `role-specs/mandrell-senior-staff-engineer.yaml` — criterion definitions
+3. `templates/csv-template.csv` — example input format
+
+Future Clay integration (not current):
+- `clay-templates/setup-guide.md`
+- `clay-templates/evaluation-prompts.md`
 
 ---
 
 ## Next Steps
 
-1. **Test with sample data**: Use `templates/csv-template.csv` to verify setup
-2. **Run on 10 real candidates**: Validate decisions make sense
-3. **Scale to full list**: Process your entire candidate pool
-4. **Review and iterate**: Adjust prompts based on results
-5. **Consider Phase 2**: If processing 500+ candidates/week, build standalone tool
+1. **Test locally with sample data** (`templates/csv-template.csv`)
+2. **Run locally on 10 real candidates** to validate decisions
+3. **Scale to full list** (broad-net export → standardize → evaluate → human overrides)
+4. **Use the operator runbook**: `RUNBOOK_OPERATOR.md`
+5. **(Optional) Use the web UI** so operators don’t need a terminal: `webapp/README.md`
+6. **Future**: consider Clay integration once the native flow is stable
 
 ---
 

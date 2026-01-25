@@ -1,7 +1,7 @@
 # Candidate Triage System - Deployment Status
 
 **Date:** 2025-01-25  
-**Phase:** Phase 1 - Upload & Display  
+**Phase:** Phase 1 - Upload & Standardization Review  
 **Status:** ✅ **DEPLOYED & READY FOR TESTING**
 
 ---
@@ -32,42 +32,54 @@
 - Validation before submission
 
 ### ✅ CSV Upload Interface
-- **Drag & drop** multiple files
-- **Click to upload** file picker
-- **File validation** (CSV only)
-- **File list display** with:
+- Drag & drop multiple files
+- Click to upload file picker
+- File validation (CSV only)
+- File list display with:
   - Filename
   - File size (formatted: KB/MB)
   - Source detection (SeekOut, Pin Wrangle, LinkedIn, GitHub)
   - Remove individual files
+
+### ✅ Standardization & Human Review Gate
+- Automatic standardization and deduplication
+- System stops after standardization
+- Displays standardized data in spreadsheet-like table
+- Export standardized CSV option
+- Human approval required before AI evaluation
+- Clear "Approve & Continue to Filters" button
 
 ### ✅ Backend Integration
 - FastAPI with CORS support
 - JSON API endpoints
 - File upload handling
 - Background processing
+- State management (queued -> running -> standardized -> evaluating -> done)
+- New approve endpoint for human gate
 
-### ✅ Processing Pipeline
-- Standardization (ingestion)
-- AI evaluation (Claude Sonnet 4)
-- Results bucketing
-- Status tracking
+### ✅ Processing Pipeline (Gated)
+- Stage 1: Standardization (auto-runs, stops for review)
+- Human approval gate (new)
+- Stage 2: AI evaluation (runs after approval)
+- Stage 3: Results bucketing
 
 ### ✅ Results Display
 - Real-time status updates (polls every 2s)
 - Progress messages
 - Download buttons for:
-  - ✅ Proceed
-  - ⚠️ Human Review
-  - ❌ Dismiss
-  - 📊 All Results
+  - Standardized data (at review stage)
+  - Proceed (after evaluation)
+  - Human Review (after evaluation)
+  - Dismiss (after evaluation)
+  - All Results (after evaluation)
 
 ### ✅ UI/UX
 - Modern, clean design with Tailwind CSS
 - Responsive layout
 - Loading states
 - Error handling
-- Status indicators with color coding
+- Status indicators with color coding (standardized, evaluating, done, error)
+- Spreadsheet-style data table for review
 
 ---
 
@@ -76,10 +88,14 @@
 1. **Open:** http://34.219.151.160:3000
 2. **Click:** "Create New Role"
 3. **Enter:** Role name (e.g., "Test - Software Engineer")
-4. **Upload:** Drag CSV files or click to select
+4. **Upload:** Drag CSV files or click to select (use small files for testing)
 5. **Submit:** Click "Process & Standardize"
-6. **Monitor:** Watch real-time status updates
-7. **Download:** Get results when processing completes
+6. **Wait:** System standardizes and deduplicates data
+7. **Review:** View standardized data in table format
+8. **Export (optional):** Download standardized CSV for manual review
+9. **Approve:** Click "Approve & Continue to Filters" to proceed
+10. **Monitor:** Watch AI evaluation progress
+11. **Download:** Get bucketed results when evaluation completes
 
 See `TEST_GUIDE.md` for detailed testing instructions.
 
@@ -109,8 +125,15 @@ tail -f /tmp/nextjs.log     # Frontend logs
 
 #### Backend
 ```bash
+cd ~/clawd/candidate-triage-system
+./start-backend.sh  # Loads .env, starts backend with API key
+```
+
+Or manually:
+```bash
 pkill -f "uvicorn webapp.main:app"
 cd ~/clawd/candidate-triage-system
+source .env
 nohup venv/bin/uvicorn webapp.main:app --host 0.0.0.0 --port 8000 > /tmp/fastapi.log 2>&1 &
 ```
 
@@ -174,17 +197,19 @@ nohup npm run dev > /tmp/nextjs.log 2>&1 &
 ## Known Limitations
 
 ### Phase 1 Scope
-- ❌ No filter configuration UI (uses existing evaluate_v3.py logic)
+- ❌ No filter configuration UI (uses hardcoded evaluate_v3.py logic)
 - ❌ No template save/load
 - ❌ No test run with sampling
 - ❌ No Google Sheets integration
 - ❌ No authentication/user management
+- ⚠️ Large candidate lists (1000+) take 30-60 minutes to evaluate (sequential processing)
 
 ### Technical
 - RUNS state stored in-memory (lost on backend restart)
 - No database persistence yet
 - Background processing via threads (not production-grade)
 - Logs to /tmp (cleared on reboot)
+- Standardized data stored in memory (not ideal for large datasets)
 
 These will be addressed in future phases.
 

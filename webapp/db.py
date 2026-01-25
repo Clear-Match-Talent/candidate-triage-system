@@ -1,0 +1,241 @@
+"""SQLite persistence layer for runs"""
+import sqlite3
+import json
+import logging
+from pathlib import Path
+from typing import Optional, List, Dict, Any, Tuple
+from dataclasses import asdict
+import time
+
+DB_PATH = Path(__file__).resolve().parents[1] / "runs.db"
+LOG_PATH = Path(__file__).resolve().parents[1] / "runs" / "db_errors.log"
+LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.FileHandler(str(LOG_PATH))
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+STANDARDIZED_INLINE_MAX_ROWS = 200
+STANDARDIZED_CHUNK_ROWS = 200
+
+
+def get_connection():
+    """Get database connection"""
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    """Initialize database schema"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS runs (
+            run_id TEXT PRIMARY KEY,
+            created_at REAL NOT NULL,
+            run_name TEXT NOT NULL,
+            role_label TEXT NOT NULL,
+            state TEXT NOT NULL,
+            message TEXT,
+            outputs TEXT,
+            standardized_data TEXT,
+            chat_messages TEXT,
+            agent_session_key TEXT,
+            pending_action TEXT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS standardized_chunks (
+            run_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            payload TEXT NOT NULL,
+            PRIMARY KEY (run_id, chunk_index)
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+
+
+def _prepare_standardized_data(standardized_data: Optional[List[Dict[str, Any]]]) -> Tuple[Optional[str], Optional[List[Tuple[int, str]]]]:
+    if not standardized_data:
+        return None, None
+    if len(standardized_data) <= STANDARDIZED_INLINE_MAX_ROWS:
+        return json.dumps(standardized_data), None
+    chunks: List[Tuple[int, str]] = []
+    for idx in range(0, len(standardized_data), STANDARDIZED_CHUNK_ROWS):
+        chunk_index = idx // STANDARDIZED_CHUNK_ROWS
+        payload = json.dumps(standardized_data[idx:idx + STANDARDIZED_CHUNK_ROWS])
+        chunks.append((chunk_index, payload))
+    marker = {
+        "_chunked": True,
+        "total_rows": len(standardized_data),
+        "chunk_rows": STANDARDIZED_CHUNK_ROWS,
+    }
+    return json.dumps(marker), chunks
+
+
+def _load_standardized_chunks(conn: sqlite3.Connection, run_id: str) -> Optional[List[Dict[str, Any]]]:
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT payload FROM standardized_chunks WHERE run_id = ? ORDER BY chunk_index ASC",
+        (run_id,),
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        return None
+    merged: List[Dict[str, Any]] = []
+    for row in rows:
+        payload = row["payload"] if isinstance(row, sqlite3.Row) else row[0]
+        merged.extend(json.loads(payload))
+    return merged
+
+
+def save_run(run_status) -> None:
+    """Save or update a run"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        standardized_payload, standardized_chunks = _prepare_standardized_data(run_status.standardized_data)
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO runs 
+            (run_id, created_at, run_name, role_label, state, message, outputs, 
+             standardized_data, chat_messages, agent_session_key, pending_action)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            run_status.run_id,
+            run_status.created_at,
+            run_status.run_name,
+            run_status.role_label,
+            run_status.state,
+            run_status.message,
+            json.dumps(run_status.outputs) if run_status.outputs else None,
+            standardized_payload,
+            json.dumps(run_status.chat_messages) if run_status.chat_messages else None,
+            run_status.agent_session_key,
+            json.dumps(run_status.pending_action) if run_status.pending_action else None,
+        ))
+
+        cursor.execute("DELETE FROM standardized_chunks WHERE run_id = ?", (run_status.run_id,))
+        if standardized_chunks:
+            cursor.executemany(
+                "INSERT INTO standardized_chunks (run_id, chunk_index, payload) VALUES (?, ?, ?)",
+                [(run_status.run_id, idx, payload) for idx, payload in standardized_chunks],
+            )
+
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to save run_id=%s", run_status.run_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def get_run(run_id: str) -> Optional[Dict[str, Any]]:
+    """Get a run by ID"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return None
+    
+    standardized_data = None
+    if row["standardized_data"]:
+        try:
+            parsed = json.loads(row["standardized_data"])
+            if isinstance(parsed, dict) and parsed.get("_chunked"):
+                standardized_data = _load_standardized_chunks(conn, run_id)
+            else:
+                standardized_data = parsed
+        except Exception:
+            logger.exception("Failed to load standardized_data for run_id=%s", run_id)
+            standardized_data = None
+    else:
+        standardized_data = _load_standardized_chunks(conn, run_id)
+
+    conn.close()
+
+    return {
+        "run_id": row["run_id"],
+        "created_at": row["created_at"],
+        "run_name": row["run_name"],
+        "role_label": row["role_label"],
+        "state": row["state"],
+        "message": row["message"],
+        "outputs": json.loads(row["outputs"]) if row["outputs"] else None,
+        "standardized_data": standardized_data,
+        "chat_messages": json.loads(row["chat_messages"]) if row["chat_messages"] else None,
+        "agent_session_key": row["agent_session_key"],
+        "pending_action": json.loads(row["pending_action"]) if row["pending_action"] else None,
+    }
+
+
+def list_runs(limit: int = 20) -> List[Dict[str, Any]]:
+    """List recent runs"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        "SELECT * FROM runs ORDER BY created_at DESC LIMIT ?",
+        (limit,)
+    )
+    rows = cursor.fetchall()
+    
+    runs = []
+    for row in rows:
+        standardized_data = None
+        if row["standardized_data"]:
+            try:
+                parsed = json.loads(row["standardized_data"])
+                if isinstance(parsed, dict) and parsed.get("_chunked"):
+                    standardized_data = _load_standardized_chunks(conn, row["run_id"])
+                else:
+                    standardized_data = parsed
+            except Exception:
+                logger.exception("Failed to load standardized_data for run_id=%s", row["run_id"])
+                standardized_data = None
+        else:
+            standardized_data = _load_standardized_chunks(conn, row["run_id"])
+
+        runs.append({
+            "run_id": row["run_id"],
+            "created_at": row["created_at"],
+            "run_name": row["run_name"],
+            "role_label": row["role_label"],
+            "state": row["state"],
+            "message": row["message"],
+            "outputs": json.loads(row["outputs"]) if row["outputs"] else None,
+            "standardized_data": standardized_data,
+            "chat_messages": json.loads(row["chat_messages"]) if row["chat_messages"] else None,
+            "agent_session_key": row["agent_session_key"],
+            "pending_action": json.loads(row["pending_action"]) if row["pending_action"] else None,
+        })
+    
+    conn.close()
+    return runs
+
+
+def delete_run(run_id: str) -> None:
+    """Delete a run"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM standardized_chunks WHERE run_id = ?", (run_id,))
+    cursor.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
+    conn.commit()
+    conn.close()
+
+
+# Initialize database on module import
+init_db()

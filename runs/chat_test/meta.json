@@ -1,0 +1,9 @@
+{
+  "run_id": "8ef831cee3",
+  "run_name": "chat_test",
+  "role_label": "Chat Test",
+  "created_at": 1769327173.9542713,
+  "input_files": [
+    "test_smallcsv.csv"
+  ]
+}

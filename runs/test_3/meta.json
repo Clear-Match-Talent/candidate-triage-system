@@ -1,0 +1,11 @@
+{
+  "run_id": "a7e7ed0a4f",
+  "run_name": "test_3",
+  "role_label": "test 3",
+  "created_at": 1769329505.3825085,
+  "input_files": [
+    "wranglecsv.csv",
+    "seekout-2026-01-23csv.csv",
+    "pincsv.csv"
+  ]
+}

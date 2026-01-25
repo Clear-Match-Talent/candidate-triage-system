@@ -1,0 +1,18 @@
+[Unit]
+Description=Candidate Triage System - Backend (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/clawd/candidate-triage-system
+Environment="PATH=/home/ubuntu/clawd/candidate-triage-system/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/home/ubuntu/clawd/candidate-triage-system/.env
+ExecStart=/home/ubuntu/clawd/candidate-triage-system/venv/bin/uvicorn webapp.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/candidate-triage-backend.log
+StandardError=append:/var/log/candidate-triage-backend.log
+
+[Install]
+WantedBy=multi-user.target

@@ -42,29 +42,40 @@ def create_source_detector_agent(llm=None):
 
 
 def detect_source(file_path: str, headers: Optional[List[str]] = None, sample_rows: Optional[List[Dict]] = None) -> Dict[str, any]:
-    """
-    Detect the source format of a CSV file.
-    
-    Args:
-        file_path: Path to the CSV file
-        headers: Optional pre-read headers (will read if not provided)
-        sample_rows: Optional pre-read sample rows (will read if not provided)
-    
+    """Detect the source format of a CSV file.
+
+    Important: Many sources share “standard-like” column names. If the CSV already
+    matches the standard schema (linkedin_url, first_name, last_name, etc.), we
+    MUST treat it as standardized (clay-like) to avoid applying source-specific
+    parsing rules (e.g., SeekOut obfuscated field handling).
+
     Returns:
-        Dictionary with:
-        - source_type: str (seekout, pin_wrangle, clay, recruitcrm, unknown)
-        - confidence: float (0.0 to 1.0)
-        - evidence: List[str] (reasons for detection)
+      Dict with:
+        - source_type: str
+        - confidence: float (0.0..1.0)
+        - evidence: List[str]
+        - headers: original headers
     """
     if headers is None:
         headers = get_csv_headers(file_path)
-    
+
     if sample_rows is None:
         sample_rows = get_sample_rows(file_path, num_rows=2)
-    
+
     headers_lower = [h.lower() for h in headers]
+
+    # --- Fast-path: already standardized schema ---
+    standard_required = {"linkedin_url", "first_name", "last_name", "location", "company_name", "title"}
+    if standard_required.issubset(set(headers_lower)):
+        return {
+            "source_type": "clay",  # treat as standard/Clay-like
+            "confidence": 1.0,
+            "evidence": ["Detected standard schema columns; treating as already standardized"],
+            "headers": headers,
+        }
+
     patterns = get_source_patterns()
-    
+
     # Check for explicit source indicators in column names
     source_scores = {}
     for source_type, indicators in patterns.items():

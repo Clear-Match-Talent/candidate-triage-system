@@ -1,0 +1,9 @@
+{
+  "run_id": "e36e7326b2",
+  "run_name": "typo_test",
+  "role_label": "Typo Test",
+  "created_at": 1769330312.2145119,
+  "input_files": [
+    "test_smallcsv.csv"
+  ]
+}

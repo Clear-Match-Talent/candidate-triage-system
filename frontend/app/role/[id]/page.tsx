@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
+import ChatSidebar from "@/components/ChatSidebar";
 
 interface RunStatus {
   run_id: string;
@@ -18,6 +19,7 @@ interface RunStatus {
     dismiss?: string;
     duplicates?: string;
   };
+  standardized_data?: Array<Record<string, any>>;
 }
 
 export default function RoleDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -30,9 +32,9 @@ export default function RoleDetail({ params }: { params: Promise<{ id: string }>
   useEffect(() => {
     fetchRunStatus();
     
-    // Poll every 2 seconds while running
+    // Poll every 2 seconds while processing or standardized (to catch chat modifications)
     const interval = setInterval(() => {
-      if (runStatus?.state === "running" || runStatus?.state === "queued") {
+      if (runStatus?.state === "running" || runStatus?.state === "queued" || runStatus?.state === "evaluating" || runStatus?.state === "standardized") {
         fetchRunStatus();
       }
     }, 2000);
@@ -65,7 +67,26 @@ export default function RoleDetail({ params }: { params: Promise<{ id: string }>
   };
 
   const downloadFile = (kind: string) => {
-    window.location.href = `/api/download/${resolvedParams.id}/${kind}`;
+    window.location.href = `/download/${resolvedParams.id}/${kind}`;
+  };
+
+  const handleApprove = async () => {
+    try {
+      const response = await fetch(`/api/runs/${resolvedParams.id}/approve`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        setError("Failed to approve run");
+        return;
+      }
+
+      // Refresh status to show evaluating state
+      fetchRunStatus();
+    } catch (err) {
+      console.error("Error approving run:", err);
+      setError("An error occurred while approving");
+    }
   };
 
   if (loading) {
@@ -113,7 +134,7 @@ export default function RoleDetail({ params }: { params: Promise<{ id: string }>
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="mb-8">
         <a
           href="/"
@@ -123,7 +144,7 @@ export default function RoleDetail({ params }: { params: Promise<{ id: string }>
         </a>
       </div>
 
-      <div className="bg-white shadow rounded-lg overflow-hidden">
+      <div className="bg-white shadow rounded-lg">
         <div className="px-6 py-4 border-b border-gray-200">
           <h1 className="text-2xl font-bold text-gray-900">
             {runStatus.role_label || runStatus.run_name}
@@ -133,7 +154,7 @@ export default function RoleDetail({ params }: { params: Promise<{ id: string }>
           </p>
         </div>
 
-        <div className="px-6 py-4">
+        <div className="p-6">
           <div className="flex items-center gap-3 mb-6">
             <h2 className="text-lg font-medium text-gray-900">Status:</h2>
             <span
@@ -142,7 +163,9 @@ export default function RoleDetail({ params }: { params: Promise<{ id: string }>
                   ? "bg-green-100 text-green-800"
                   : runStatus.state === "error"
                   ? "bg-red-100 text-red-800"
-                  : runStatus.state === "running"
+                  : runStatus.state === "standardized"
+                  ? "bg-blue-100 text-blue-800"
+                  : runStatus.state === "running" || runStatus.state === "evaluating"
                   ? "bg-yellow-100 text-yellow-800"
                   : "bg-gray-100 text-gray-800"
               }`}
@@ -157,7 +180,7 @@ export default function RoleDetail({ params }: { params: Promise<{ id: string }>
             </div>
           )}
 
-          {(runStatus.state === "running" || runStatus.state === "queued") && (
+          {(runStatus.state === "running" || runStatus.state === "queued" || runStatus.state === "evaluating") && (
             <div className="mb-6">
               <div className="flex items-center gap-3">
                 <svg
@@ -183,6 +206,75 @@ export default function RoleDetail({ params }: { params: Promise<{ id: string }>
                 <span className="text-gray-600">Processing... This may take a few minutes.</span>
               </div>
             </div>
+          )}
+
+          {runStatus.state === "standardized" && runStatus.standardized_data && (
+            <>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Standardized Data Review ({runStatus.standardized_data.length} candidates)
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Review the standardized candidate data below. Export if needed, then approve to continue to AI evaluation.
+              </p>
+              
+              <div className="flex gap-4 mb-4">
+                <button
+                  onClick={() => downloadFile("standardized")}
+                  className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+                >
+                  Export Standardized CSV
+                </button>
+                <button
+                  onClick={handleApprove}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+                >
+                  Approve & Continue to Filters
+                </button>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex-1 overflow-auto border border-gray-200 rounded-lg" style={{ height: '500px' }}>
+                  <table className="w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50 sticky top-0 z-10">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap bg-gray-50 border-r border-gray-300">
+                          #
+                        </th>
+                        {runStatus.standardized_data.length > 0 && 
+                          Object.keys(runStatus.standardized_data[0]).map((key, idx) => (
+                            <th
+                              key={key}
+                              className="px-3 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap bg-gray-50"
+                            >
+                              <div className="uppercase tracking-wider">{String.fromCharCode(65 + idx)}</div>
+                              <div className="text-xs mt-1">{key}</div>
+                            </th>
+                          ))
+                        }
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {runStatus.standardized_data.map((row: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-sm font-medium text-gray-500 whitespace-nowrap border-r border-gray-300 bg-gray-50">
+                            {idx + 1}
+                          </td>
+                          {Object.values(row).map((val: any, cellIdx: number) => (
+                            <td key={cellIdx} className="px-3 py-2 text-sm text-gray-900 whitespace-nowrap">
+                              {val || '-'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                
+                <div className="w-80 flex-shrink-0" style={{ height: '500px' }}>
+                  <ChatSidebar runId={resolvedParams.id} />
+                </div>
+              </div>
+            </>
           )}
 
           {runStatus.state === "done" && runStatus.outputs && (

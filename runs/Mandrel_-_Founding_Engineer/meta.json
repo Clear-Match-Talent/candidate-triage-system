@@ -1,0 +1,11 @@
+{
+  "run_id": "d1b47466ae",
+  "run_name": "Mandrel_-_Founding_Engineer",
+  "role_label": "Mandrel - Founding Engineer",
+  "created_at": 1769320772.3466527,
+  "input_files": [
+    "seekout-2026-01-23csv.csv",
+    "pincsv.csv",
+    "wranglecsv.csv"
+  ]
+}
