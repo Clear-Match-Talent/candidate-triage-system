@@ -61,15 +61,6 @@ export default function FileUpload({ files, onFilesChange, disabled }: FileUploa
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i];
   };
 
-  const detectSource = (filename: string): string => {
-    const lower = filename.toLowerCase();
-    if (lower.includes("seekout")) return "SeekOut";
-    if (lower.includes("pin") || lower.includes("wrangle")) return "Pin Wrangle";
-    if (lower.includes("linkedin")) return "LinkedIn";
-    if (lower.includes("github")) return "GitHub";
-    return "Unknown";
-  };
-
   return (
     <div className="space-y-4">
       <div
@@ -133,10 +124,6 @@ export default function FileUpload({ files, onFilesChange, disabled }: FileUploa
                   <div className="flex items-center gap-3 mt-1">
                     <p className="text-xs text-black opacity-70">
                       {formatFileSize(file.size)}
-                    </p>
-                    <span className="text-xs text-black opacity-40">•</span>
-                    <p className="text-xs text-blue-600 font-semibold">
-                      {detectSource(file.name)}
                     </p>
                   </div>
                 </div>
