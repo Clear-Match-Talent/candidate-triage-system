@@ -59,10 +59,11 @@
 ## 🚀 What's Next
 
 ### Immediate (Priority 1)
-1. **Resolve Task 003** - Either:
+1. **Setup GitHub Authentication** - Configure SSH key or PAT so auto-commit works (see `GITHUB_AUTH_SETUP.md`)
+2. **Resolve Task 003** - Either:
    - Fix the test prompt to be unambiguous, OR
    - Debug chatbot logic to understand why it's not creating pending_action
-2. **Resume Ralph Loop** - Complete Task 003
+3. **Resume Ralph Loop** - Complete Task 003
 
 ### Testing Phase (Priority 2)
 1. **Small Dataset Test** - Jason/Eric test with 10-20 real candidates
