@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Candidate Triage System</title>
+  <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    h1 { margin: 0 0 8px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 16px; max-width: 860px; }
+    label { display:block; font-weight: 600; margin-top: 12px; }
+    input[type=text] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+    input[type=file] { margin-top: 6px; }
+    button { margin-top: 14px; padding: 10px 14px; border-radius: 8px; border: 1px solid #111; background: #111; color: #fff; font-weight: 600; cursor: pointer; }
+    .hint { color: #555; font-size: 13px; margin-top: 6px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    th, td { border-bottom: 1px solid #eee; padding: 10px 8px; font-size: 14px; }
+    .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #ddd; }
+    .queued { background: #fafafa; }
+    .running { background: #fff8e1; }
+    .done { background: #e8f5e9; }
+    .error { background: #ffebee; }
+    a { color: #0b57d0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>Candidate Triage System</h1>
+  <p class="hint">Upload one or more CSV exports. The system will standardize + dedupe, run AI evaluation, and produce proceed/human_review/dismiss outputs.</p>
+
+  <div class="card">
+    <form action="/run" method="post" enctype="multipart/form-data">
+      <label>Run name (optional)</label>
+      <input type="text" name="run_name" placeholder="e.g., 2026-01-24_mandrel_founding-eng_nyc" />
+
+      <label>Role label (optional)</label>
+      <input type="text" name="role_label" placeholder="e.g., Mandrel — Founding Engineer (NYC)" />
+
+      <label>CSV files</label>
+      <input type="file" name="files" multiple accept=".csv" required />
+      <div class="hint">Tip: You can upload multiple sources at once; ingestion will standardize + dedupe by LinkedIn URL.</div>
+
+      <button type="submit">Run</button>
+    </form>
+  </div>
+
+  <h2 style="margin-top:24px;">Recent runs</h2>
+  <table>
+    <thead>
+      <tr><th>Run</th><th>Role</th><th>Status</th><th>Message</th></tr>
+    </thead>
+    <tbody>
+    {% for r in recent %}
+      <tr>
+        <td><a href="/runs/{{ r.run_id }}">{{ r.run_name }}</a></td>
+        <td>{{ r.role_label }}</td>
+        <td><span class="pill {{ r.state }}">{{ r.state }}</span></td>
+        <td>{{ r.message }}</td>
+      </tr>
+    {% endfor %}
+    {% if recent|length == 0 %}
+      <tr><td colspan="4" class="hint">No runs yet.</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+</body>
+</html>
