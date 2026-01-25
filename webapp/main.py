@@ -38,6 +38,7 @@ from anthropic import Anthropic
 import pandas as pd
 from webapp.main_tool_calling import execute_data_modification, EXECUTE_PYTHON_TOOL
 from webapp import db
+from webapp.chatbot_context import build_agent_context, format_field_stats, format_quality_issues
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = REPO_ROOT / "runs"
@@ -503,9 +504,22 @@ async def handle_chat_message(run_id: str, message: str, st: RunStatus) -> str:
     def format_pending_action_response(explanation: str, code: str) -> str:
         return (
             f"{explanation}\n\n"
-            f"Proposed code:\n```python\n{code}\n```\n\n"
             "Reply **\"run\"** to apply this change, or describe a different modification."
         )
+
+    def sanitize_user_visible_text(text: str) -> str:
+        if not text:
+            return text
+        # Remove fenced code blocks entirely.
+        text = re.sub(r"```.*?```", "", text, flags=re.DOTALL).strip()
+        # Remove inline snippets that look like Python/pandas operations.
+        def _strip_inline_code(match: re.Match) -> str:
+            snippet = match.group(1)
+            if re.search(r"\b(df|pd|lambda|iloc|loc|import)\b", snippet) or "{" in snippet or "[" in snippet:
+                return ""
+            return snippet
+        text = re.sub(r"`([^`]+)`", _strip_inline_code, text)
+        return " ".join(text.split())
 
     def ensure_standardized_data_loaded() -> bool:
         if st.standardized_data:
@@ -533,6 +547,17 @@ async def handle_chat_message(run_id: str, message: str, st: RunStatus) -> str:
 
         fields = list(st.standardized_data[0].keys())
         message_lower = user_message.lower()
+        core_fields = {
+            "linkedin_url",
+            "email",
+            "first_name",
+            "last_name",
+            "full_name",
+            "phone",
+            "location",
+            "company_name",
+            "title",
+        }
 
         col_match = re.search(r"column\s+([a-z])", message_lower)
         if not col_match:
@@ -548,6 +573,10 @@ async def handle_chat_message(run_id: str, message: str, st: RunStatus) -> str:
         if any(keyword in message_lower for keyword in ["clear", "delete", "remove", "empty", "blank", "erase"]):
             code = f"df.iloc[:, {col_index}] = ''"
             explanation = f"This will clear all values in column {col_letter} ({target_field})."
+            if target_field in core_fields:
+                explanation += (
+                    f" Heads-up: {target_field} is a core field, so clearing it can reduce match rates."
+                )
             return {"code": code, "explanation": explanation}
 
         if any(keyword in message_lower for keyword in ["fill", "set", "populate", "update", "overwrite"]):
@@ -565,6 +594,11 @@ async def handle_chat_message(run_id: str, message: str, st: RunStatus) -> str:
                     f"This will set column {col_letter} ({target_field}) to the values from "
                     f"{source_field} for all candidates."
                 )
+                if target_field in core_fields:
+                    explanation += (
+                        f" Heads-up: {target_field} is a core field, so overwriting it can change "
+                        "how candidates are matched and scored."
+                    )
                 return {"code": code, "explanation": explanation}
 
             quoted = re.search(r"['\"]([^'\"]+)['\"]", user_message)
@@ -574,6 +608,11 @@ async def handle_chat_message(run_id: str, message: str, st: RunStatus) -> str:
                 explanation = (
                     f"This will set all values in column {col_letter} ({target_field}) to \"{literal_value}\"."
                 )
+                if target_field in core_fields:
+                    explanation += (
+                        f" Heads-up: {target_field} is a core field, so overwriting it can affect downstream "
+                        "matching and outreach."
+                    )
                 return {"code": code, "explanation": explanation}
 
         return None
@@ -615,44 +654,80 @@ async def handle_chat_message(run_id: str, message: str, st: RunStatus) -> str:
             "Please run the standardization step first, then tell me what you'd like to change."
         )
 
-    # Build context about the data
-    data_summary = ""
-    if st.standardized_data and len(st.standardized_data) > 0:
-        total_rows = len(st.standardized_data)
-        fields = list(st.standardized_data[0].keys())
-        
-        # Get column index mapping (A=0, B=1, etc.)
-        column_letters = {chr(65 + i): i for i in range(len(fields))}
-        field_column_map = "\n".join([f"  Column {chr(65+i)} ({i}): {field}" for i, field in enumerate(fields)])
-        
-        # Sample first few rows for context
-        sample_rows = st.standardized_data[:3]
-        
-        data_summary = f"""You are a data assistant helping to modify standardized candidate data.
+    # Build rich context about the data and domain knowledge
+    context = build_agent_context(st)
+    if context.get("error"):
+        return (
+            "I don't have standardized candidate data loaded for this run yet. "
+            "Please run the standardization step first, then tell me what you'd like to change."
+        )
 
-Current dataset:
+    total_rows = context["dataset_info"]["total_candidates"]
+    fields = context["dataset_info"]["fields"]
+
+    # Get column index mapping (A=0, B=1, etc.)
+    field_column_map = "\n".join([f"  Column {chr(65+i)} ({i}): {field}" for i, field in enumerate(fields)])
+
+    field_definitions = json.dumps(context["field_definitions"], indent=2)
+    field_stats = format_field_stats(context["field_stats"])
+    quality_issues = format_quality_issues(context["quality_issues"])
+    common_issues = json.dumps(context["common_issues"], indent=2)
+    example_transformations = json.dumps(context["example_transformations"], indent=2)
+    sample_rows = json.dumps(context["sample_rows"], indent=2)
+
+    data_summary = f"""You are a Recruiting Data Quality Assistant for standardized candidate data.
+
+# ROLE
+Help recruiters clean, validate, and improve candidate data. Be proactive, specific, safe, and concise.
+
+# CURRENT DATASET
 - Total candidates: {total_rows}
+- Role: {context['dataset_info']['role']}
 - Fields/Columns:
 {field_column_map}
 
+# FIELD DEFINITIONS (domain knowledge)
+{field_definitions}
+
+# FIELD STATISTICS
+{field_stats}
+
+# DETECTED QUALITY ISSUES
+{quality_issues}
+
+# COMMON RECRUITING DATA ISSUES
+{common_issues}
+
+# EXAMPLE TRANSFORMATIONS
+{example_transformations}
+
+# CAPABILITIES
+- Analyze data quality and patterns
+- Suggest and apply safe field transformations
+- Validate formats (email/URL/phone)
+
+# TOOL USAGE RULES
+- Use execute_python only when the user wants to modify data.
+- You have access to a pandas DataFrame named 'df'.
+- For column letters (G, H, etc.), use df.iloc[:, index] where index = ord(letter) - ord('A').
+- Always modify df in place and explain the change in recruiter-friendly terms.
+- Never show Python code to the user. Keep code execution internal.
+- Ask for confirmation before applying changes.
+- Warn before overwriting or clearing core fields (linkedin_url, email, first_name, last_name, full_name, phone, location, company_name, title).
+
+# RESPONSE STYLE
+- Proactive: point out likely issues and propose fixes.
+- Specific: name fields and impact.
+- Safe: avoid deleting records; prefer reversible changes.
+- Concise: use short bullet points when listing multiple items.
+- Plain recruiting/business language only (e.g., "I'll standardize all LinkedIn URLs to start with https://www.linkedin.com/in/").
+
+# COLUMN OPERATIONS
+- Users can rename columns, add calculated columns, and reorder columns.
+- Be helpful and flexible; only warn before deleting or overwriting core fields.
+
 Sample data (first 3 rows):
-{json.dumps(sample_rows, indent=2)}
-
-The user will describe changes they want to make to the data. Your job is to:
-1. Understand what they want to change
-2. Use the execute_python tool to write Python code that makes the change
-3. Explain what you're going to do in simple terms
-4. The user will reply "run" to confirm and apply the changes
-
-When using execute_python:
-- You have access to a pandas DataFrame called 'df' with all the data
-- For column letters (G, H, etc.), use df.iloc[:, index] where index = ord(letter) - ord('A')
-- Be precise and handle edge cases
-- Always modify df in place
-
-Example: "clear column G and H" →
-code: "df.iloc[:, 6] = ''; df.iloc[:, 7] = ''"
-explanation: "This will clear all data in columns G (experience_text) and H (education_text)."
+{sample_rows}
 """
     
     # Get previous messages for context
@@ -691,7 +766,9 @@ explanation: "This will clear all data in columns G (experience_text) and H (edu
             
             if tool_use and tool_use.name == "execute_python":
                 code = tool_use.input['code']
-                explanation = tool_use.input['explanation']
+                explanation = sanitize_user_visible_text(tool_use.input['explanation'])
+                if not explanation:
+                    explanation = "I can apply the requested change to the dataset."
                 
                 # Store the pending action
                 st.pending_action = {
@@ -706,6 +783,7 @@ explanation: "This will clear all data in columns G (experience_text) and H (edu
         
         # Otherwise, return Claude's text response, but avoid promising a run if nothing is pending.
         text_response = next((block.text for block in response.content if hasattr(block, 'text')), "")
+        text_response = sanitize_user_visible_text(text_response)
         if text_response and "run" in text_response.lower() and not st.pending_action:
             return (
                 "I can propose a change, but I don't have a saved action yet. "

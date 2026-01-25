@@ -98,7 +98,7 @@ The code should modify the 'df' variable in place.""",
             },
             "explanation": {
                 "type": "string",
-                "description": "Brief explanation of what the code will do for the user."
+                "description": "Brief explanation in recruiting/business language; do not include any code."
             }
         },
         "required": ["code", "explanation"]
