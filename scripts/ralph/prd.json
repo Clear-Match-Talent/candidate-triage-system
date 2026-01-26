@@ -194,7 +194,7 @@
         "FAIL: Form not populated with results"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "fileHints": ["webapp/main.py", "webapp/templates/role.html", "requirements.txt"]
     },
     {

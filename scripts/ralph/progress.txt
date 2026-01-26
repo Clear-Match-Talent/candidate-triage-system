@@ -133,3 +133,22 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context (e.g., "the evaluation panel is in component X")
     - Criteria form pulls `/api/roles/{role_id}/criteria` for prefill and posts JSON arrays back on save
 ---
+## 2026-01-26 10:23:48 UTC - ADD-003
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented
+- Added document analysis endpoint to extract criteria suggestions from JD/intake/calibration files via Claude
+- Added Analyze Documents UI with spinner and auto-fill logic for criteria form
+- Added PDF/DOCX text extraction dependencies
+- Files changed
+- webapp/main.py
+- webapp/templates/role.html
+- requirements.txt
+- scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Analyze endpoint: POST `/api/roles/{role_id}/analyze-documents` returns arrays for must_haves, gating_params, nice_to_haves
+---

@@ -44,6 +44,8 @@ from starlette.requests import Request
 import os
 from anthropic import Anthropic
 import pandas as pd
+from PyPDF2 import PdfReader
+from docx import Document
 from webapp.main_tool_calling import execute_data_modification, EXECUTE_PYTHON_TOOL
 from webapp import db
 from webapp.chatbot_context import build_agent_context, format_field_stats, format_quality_issues
@@ -671,6 +673,111 @@ def _normalize_gating_params(value: Any) -> Dict[str, Any]:
     }
 
 
+MAX_DOC_CHARS = 40000
+
+
+def _read_text_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return path.read_text(encoding="latin1")
+
+
+def _extract_pdf_text(path: Path) -> str:
+    reader = PdfReader(str(path))
+    parts: List[str] = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        if text:
+            parts.append(text)
+    return "\n".join(parts)
+
+
+def _extract_docx_text(path: Path) -> str:
+    doc = Document(str(path))
+    return "\n".join(paragraph.text for paragraph in doc.paragraphs)
+
+
+def _load_document_text(doc: Dict[str, Any]) -> str:
+    file_path = doc.get("file_path") or ""
+    if _is_url(file_path):
+        return f"URL: {file_path}"
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Document not found: {file_path}")
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        return _extract_pdf_text(path)
+    if ext == ".docx":
+        return _extract_docx_text(path)
+    if ext in {".txt", ".csv"}:
+        return _read_text_file(path)
+    raise ValueError(f"Unsupported document type: {ext}")
+
+
+def _truncate_text(text: str, limit: int = MAX_DOC_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n[truncated]"
+
+
+def _extract_criteria_from_text(
+    jd_text: str,
+    intake_text: Optional[str] = None,
+    calibration_text: Optional[str] = None,
+) -> Dict[str, List[str]]:
+    sections = [
+        ("Job Description", jd_text),
+    ]
+    if intake_text:
+        sections.append(("Intake Form", intake_text))
+    if calibration_text:
+        sections.append(("Calibration Candidates", calibration_text))
+
+    formatted_sections = "\n\n".join(
+        f"{label}:\n\"\"\"\n{_truncate_text(text)}\n\"\"\"" for label, text in sections
+    )
+
+    prompt = (
+        "Analyze the role documents and extract filtering criteria for recruiting.\n"
+        "Return ONLY JSON with keys: must_haves, gating_params, nice_to_haves.\n"
+        "Each value should be an array of concise strings.\n"
+        "Gating params should describe disqualifiers such as job hopping, bootcamp-only, "
+        "location mismatch, or other hard blockers.\n\n"
+        f"{formatted_sections}"
+    )
+
+    response = anthropic_client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text_response = next(
+        (block.text for block in response.content if hasattr(block, "text")), ""
+    )
+    payload = extract_json_object(text_response)
+
+    must_haves = _normalize_criteria_lines(payload.get("must_haves"))
+    nice_to_haves = _normalize_criteria_lines(payload.get("nice_to_haves"))
+    gating_raw = payload.get("gating_params")
+    if isinstance(gating_raw, list):
+        gating_params = [str(item).strip() for item in gating_raw if str(item).strip()]
+    elif isinstance(gating_raw, dict):
+        gating_params = [
+            f"{key}: {value}".strip(": ").strip()
+            for key, value in gating_raw.items()
+            if f"{key}{value}".strip()
+        ]
+    else:
+        gating_params = _normalize_criteria_lines(gating_raw)
+
+    return {
+        "must_haves": must_haves,
+        "gating_params": gating_params,
+        "nice_to_haves": nice_to_haves,
+    }
+
+
 @app.post("/api/roles/{role_id}/documents")
 async def upload_role_document(
     role_id: str,
@@ -773,6 +880,41 @@ def delete_role_document(role_id: str, doc_id: str):
 
     db.delete_role_document(doc_id)
     return JSONResponse({"success": True, "id": doc_id})
+
+
+@app.post("/api/roles/{role_id}/analyze-documents")
+def analyze_role_documents(role_id: str):
+    if not db.get_role_name(role_id):
+        return JSONResponse({"error": "Role not found"}, status_code=404)
+
+    jd_doc = db.get_role_document_by_type(role_id, "jd")
+    if not jd_doc:
+        return JSONResponse(
+            {"error": "Job Description document is required"},
+            status_code=400,
+        )
+
+    try:
+        jd_text = _load_document_text(jd_doc)
+        intake_doc = db.get_role_document_by_type(role_id, "intake")
+        calibration_doc = db.get_role_document_by_type(role_id, "calibration")
+        intake_text = _load_document_text(intake_doc) if intake_doc else None
+        calibration_text = (
+            _load_document_text(calibration_doc) if calibration_doc else None
+        )
+        criteria = _extract_criteria_from_text(
+            jd_text,
+            intake_text=intake_text,
+            calibration_text=calibration_text,
+        )
+    except Exception as exc:
+        logger.exception("Failed to analyze role documents role_id=%s", role_id)
+        return JSONResponse(
+            {"error": f"Failed to analyze documents: {exc}"},
+            status_code=500,
+        )
+
+    return JSONResponse(criteria)
 
 
 @app.get("/api/roles/{role_id}/criteria")
