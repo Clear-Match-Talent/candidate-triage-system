@@ -23,12 +23,19 @@ import subprocess
 import threading
 import time
 import uuid
+from io import StringIO
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse
+from fastapi import Body, FastAPI, File, Form, UploadFile
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,8 +49,40 @@ from webapp.chatbot_context import build_agent_context, format_field_stats, form
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = REPO_ROOT / "runs"
+UPLOADS_DIR = REPO_ROOT / "uploads" / "batches"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+STANDARDIZED_FIELDS = [
+    "first_name",
+    "last_name",
+    "full_name",
+    "linkedin_url",
+    "location",
+    "current_company",
+    "current_title",
+]
+STEPPER_STEPS = [
+    {"key": "upload", "label": "Upload"},
+    {"key": "map", "label": "Map Fields"},
+    {"key": "standardize", "label": "Standardize"},
+    {"key": "review", "label": "Review"},
+    {"key": "approve", "label": "Approve"},
+    {"key": "test_run", "label": "Test Run"},
+    {"key": "filter", "label": "Filter"},
+    {"key": "results", "label": "Results"},
+]
+STEPPER_STATUS_MAP = {
+    "pending": "map",
+    "mapping": "map",
+    "standardizing": "standardize",
+    "standardized": "review",
+    "approved": "test_run",
+}
+STEPPER_URL_BUILDERS = {
+    "map": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/map",
+    "review": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/review",
+    "test_run": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/test-run",
+}
 
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -82,6 +121,41 @@ class RunStatus:
     pending_action: Optional[dict] = None  # Proposed data modification waiting for confirmation
 
 
+def step_from_batch_status(status: Optional[str]) -> str:
+    """Translate batch status into the active workflow step."""
+    return STEPPER_STATUS_MAP.get((status or "").lower(), "upload")
+
+
+def build_stepper_context(
+    current_step: str,
+    role_id: Optional[str] = None,
+    batch_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return stepper payload for templates."""
+    step_index = {step["key"]: idx for idx, step in enumerate(STEPPER_STEPS)}
+    current_index = step_index.get(current_step, 0)
+    steps: List[Dict[str, Any]] = []
+    for idx, step in enumerate(STEPPER_STEPS):
+        if idx < current_index:
+            state = "completed"
+        elif idx == current_index:
+            state = "active"
+        else:
+            state = "future"
+        url = None
+        if role_id and batch_id and step["key"] in STEPPER_URL_BUILDERS:
+            url = STEPPER_URL_BUILDERS[step["key"]](role_id, batch_id)
+        steps.append(
+            {
+                "key": step["key"],
+                "label": step["label"],
+                "state": state,
+                "url": url,
+            }
+        )
+    return {"steps": steps, "current": current_step}
+
+
 # Helper functions for DB <-> RunStatus conversion
 def dict_to_runstatus(data: dict) -> RunStatus:
     """Convert database dict to RunStatus dataclass"""
@@ -109,6 +183,117 @@ def safe_name(s: str) -> str:
             keep.append(ch)
     out = "".join(keep).strip().replace(" ", "_")
     return out[:80] if out else "run"
+
+
+def safe_filename(name: str) -> str:
+    raw = (name or "").strip()
+    keep = []
+    for ch in raw:
+        if ch.isalnum() or ch in "-_.":
+            keep.append(ch)
+    out = "".join(keep).strip()
+    if not out:
+        out = "file.csv"
+    return out[:120]
+
+
+def read_csv_metadata(file_path: Path) -> Tuple[List[str], int]:
+    for encoding in ("utf-8", "latin1"):
+        try:
+            with file_path.open("r", encoding=encoding, newline="") as handle:
+                reader = csv.reader(handle)
+                headers = next(reader, [])
+                row_count = sum(1 for _ in reader)
+            return headers, row_count
+        except UnicodeDecodeError:
+            continue
+    raise ValueError(f"Unable to decode CSV: {file_path.name}")
+
+
+def read_csv_with_fallback(file_path: Path) -> pd.DataFrame:
+    """Read CSV with UTF-8 fallback to latin1."""
+    try:
+        return pd.read_csv(file_path, dtype=str, keep_default_na=False)
+    except UnicodeDecodeError:
+        return pd.read_csv(file_path, dtype=str, keep_default_na=False, encoding="latin1")
+
+
+def normalize_value(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+    return str(value)
+
+
+def apply_mappings_to_row(
+    row: Dict[str, Optional[str]],
+    mappings: Dict[str, str],
+) -> Dict[str, Optional[str]]:
+    standardized: Dict[str, Optional[str]] = {}
+    for source, target in mappings.items():
+        if target == "skip":
+            continue
+        if target not in STANDARDIZED_FIELDS:
+            continue
+        value = normalize_value(row.get(source))
+        if value is None:
+            continue
+        if not standardized.get(target):
+            standardized[target] = value
+    full_name = normalize_value(standardized.get("full_name"))
+    if full_name and not standardized.get("first_name") and not standardized.get("last_name"):
+        parts = full_name.split()
+        if parts:
+            standardized["first_name"] = parts[0]
+            standardized["last_name"] = " ".join(parts[1:]) if len(parts) > 1 else ""
+    return standardized
+
+
+def extract_json_mapping(text: str) -> Dict[str, str]:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError("No JSON mapping found in AI response")
+    mapping = json.loads(match.group(0))
+    if not isinstance(mapping, dict):
+        raise ValueError("AI response mapping is not a JSON object")
+    return {str(k): str(v) for k, v in mapping.items()}
+
+
+def suggest_mappings_for_headers(headers: List[str]) -> Dict[str, str]:
+    prompt = (
+        "Map these CSV columns to the standardized fields: "
+        f"{', '.join(STANDARDIZED_FIELDS)}.\n"
+        "Return ONLY a JSON object mapping each source column to a target field.\n"
+        "If a column should be skipped, map it to \"skip\".\n\n"
+        f"CSV columns: {headers}"
+    )
+    response = anthropic_client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text_response = next(
+        (block.text for block in response.content if hasattr(block, "text")), ""
+    )
+    return extract_json_mapping(text_response)
+
+
+def validate_mapping_payload(files_payload: List[Dict[str, Any]]) -> Tuple[bool, str]:
+    has_linkedin = False
+    for file_payload in files_payload:
+        mappings = file_payload.get("mappings", {})
+        if not isinstance(mappings, dict):
+            return False, "Invalid mappings payload"
+        for target in mappings.values():
+            if target == "linkedin_url":
+                has_linkedin = True
+            if target != "skip" and target not in STANDARDIZED_FIELDS:
+                return False, "Invalid target field in mappings"
+    if not has_linkedin:
+        return False, "linkedin_url mapping is required"
+    return True, ""
 
 
 def restandardize_run(run_id: str) -> None:
@@ -258,6 +443,7 @@ def home(request: Request):
         {
             "request": request,
             "recent": recent,
+            "stepper": build_stepper_context("upload"),
         },
     )
 
@@ -306,11 +492,446 @@ def create_run(
     return RedirectResponse(url=f"/runs/{rid}", status_code=303)
 
 
+@app.post("/api/roles/{role_id}/batches/upload")
+def upload_candidate_batch(
+    role_id: str,
+    files: Optional[List[UploadFile]] = File(default=None),
+):
+    if not files:
+        return JSONResponse({"error": "No files uploaded"}, status_code=400)
+
+    invalid_files = [
+        f.filename for f in files if not (f.filename or "").lower().endswith(".csv")
+    ]
+    if invalid_files:
+        return JSONResponse(
+            {"error": "Only CSV files are supported", "files": invalid_files},
+            status_code=400,
+        )
+
+    batch_name = f"Batch {time.strftime('%Y-%m-%d %H:%M')}"
+    try:
+        batch_id = db.create_candidate_batch(role_id, batch_name, "pending")
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to create batch: {exc}"},
+            status_code=500,
+        )
+
+    batch_dir = UPLOADS_DIR / batch_id
+    batch_dir.mkdir(parents=True, exist_ok=True)
+
+    files_payload = []
+    total_rows = 0
+
+    for upload in files:
+        original_name = Path(upload.filename or "file.csv").name
+        filename = safe_filename(original_name)
+        if not filename.lower().endswith(".csv"):
+            filename = f"{filename}.csv"
+
+        dest = batch_dir / filename
+        with dest.open("wb") as handle:
+            shutil.copyfileobj(upload.file, handle)
+        upload.file.close()
+
+        try:
+            headers, row_count = read_csv_metadata(dest)
+        except Exception as exc:
+            return JSONResponse(
+                {"error": f"Failed to read CSV {filename}: {exc}"},
+                status_code=400,
+            )
+
+        total_rows += row_count
+        db.insert_batch_file_upload(batch_id, filename, row_count, headers)
+        files_payload.append(
+            {
+                "filename": filename,
+                "row_count": row_count,
+                "headers": headers,
+            }
+        )
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "role_id": role_id,
+            "files": files_payload,
+            "total_rows": total_rows,
+        }
+    )
+
+
+@app.post("/api/batches/{batch_id}/suggest-mappings")
+def suggest_batch_mappings(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    uploads = db.list_batch_file_uploads(batch_id)
+    files_payload = []
+
+    for upload in uploads:
+        headers = upload.get("headers") or []
+        try:
+            suggested_mappings = suggest_mappings_for_headers(headers)
+        except Exception as exc:
+            return JSONResponse(
+                {"error": f"AI mapping failed: {exc}"},
+                status_code=500,
+            )
+        files_payload.append(
+            {
+                "filename": upload.get("filename"),
+                "headers": headers,
+                "suggested_mappings": suggested_mappings,
+            }
+        )
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "files": files_payload,
+            "standardized_fields": STANDARDIZED_FIELDS,
+        }
+    )
+
+
+@app.post("/api/batches/{batch_id}/apply-mappings")
+def apply_batch_mappings(
+    batch_id: str,
+    payload: Dict[str, Any] = Body(...),
+):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    files_payload = payload.get("files", [])
+    if not files_payload:
+        return JSONResponse({"error": "No mappings provided"}, status_code=400)
+
+    is_valid, error_message = validate_mapping_payload(files_payload)
+    if not is_valid:
+        return JSONResponse({"error": error_message}, status_code=400)
+
+    uploads = db.list_batch_file_uploads(batch_id)
+    if not uploads:
+        return JSONResponse({"error": "No files found for batch"}, status_code=400)
+
+    mappings_by_filename = {
+        file_payload.get("filename"): file_payload.get("mappings", {})
+        for file_payload in files_payload
+    }
+
+    for upload in uploads:
+        if upload.get("filename") not in mappings_by_filename:
+            return JSONResponse(
+                {"error": f"Missing mappings for {upload.get('filename')}"},
+                status_code=400,
+            )
+
+    total_uploaded = sum(upload.get("row_count") or 0 for upload in uploads)
+    seen_linkedin: set[str] = set()
+    candidates_payload: List[Dict[str, Any]] = []
+    deduplicated_count = 0
+    final_count = 0
+
+    for upload in uploads:
+        filename = upload.get("filename")
+        if not filename:
+            continue
+        file_path = UPLOADS_DIR / batch_id / filename
+        if not file_path.exists():
+            return JSONResponse(
+                {"error": f"Missing file on disk: {filename}"},
+                status_code=400,
+            )
+        df = read_csv_with_fallback(file_path)
+        mappings = mappings_by_filename.get(filename, {})
+
+        for _, row in df.iterrows():
+            raw_row = row.to_dict()
+            standardized_data = apply_mappings_to_row(raw_row, mappings)
+            linkedin_url = normalize_value(standardized_data.get("linkedin_url"))
+            normalized_key = linkedin_url.lower() if linkedin_url else ""
+            status = "standardized"
+            if normalized_key:
+                if normalized_key in seen_linkedin:
+                    status = "duplicate"
+                    deduplicated_count += 1
+                else:
+                    seen_linkedin.add(normalized_key)
+            if status == "standardized":
+                final_count += 1
+
+            candidates_payload.append(
+                {
+                    "first_name": standardized_data.get("first_name"),
+                    "last_name": standardized_data.get("last_name"),
+                    "full_name": standardized_data.get("full_name"),
+                    "linkedin_url": linkedin_url,
+                    "location": standardized_data.get("location"),
+                    "current_company": standardized_data.get("current_company"),
+                    "current_title": standardized_data.get("current_title"),
+                    "raw_data": raw_row,
+                    "standardized_data": standardized_data,
+                    "status": status,
+                }
+            )
+
+    try:
+        db.insert_raw_candidates(batch_id, batch.get("role_id"), candidates_payload)
+        db.update_candidate_batch_status(batch_id, "standardized")
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to apply mappings: {exc}"},
+            status_code=500,
+        )
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "total_uploaded": total_uploaded,
+            "deduplicated_count": deduplicated_count,
+            "final_count": final_count,
+        }
+    )
+
+
+@app.get("/api/batches/{batch_id}/candidates")
+def list_batch_candidates(batch_id: str, view: str = "standardized"):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    normalized_view = (view or "standardized").lower()
+    if normalized_view not in {"raw", "standardized", "comparison"}:
+        return JSONResponse({"error": "Invalid view"}, status_code=400)
+
+    candidates = db.list_raw_candidates(batch_id, exclude_duplicates=True)
+    metrics = db.get_batch_metrics(batch_id)
+
+    candidates_payload: List[Dict[str, Any]] = []
+    for candidate in candidates:
+        if normalized_view == "raw":
+            candidates_payload.append({"raw_data": candidate.get("raw_data")})
+            continue
+
+        standardized_payload = {
+            "first_name": candidate.get("first_name"),
+            "last_name": candidate.get("last_name"),
+            "full_name": candidate.get("full_name"),
+            "linkedin_url": candidate.get("linkedin_url"),
+            "location": candidate.get("location"),
+            "current_company": candidate.get("current_company"),
+            "current_title": candidate.get("current_title"),
+        }
+
+        if normalized_view == "comparison":
+            candidates_payload.append(
+                {
+                    "raw_data": candidate.get("raw_data"),
+                    **standardized_payload,
+                }
+            )
+        else:
+            candidates_payload.append(standardized_payload)
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "batch_name": batch.get("name"),
+            "batch_status": batch.get("status"),
+            "view": normalized_view,
+            "candidates": candidates_payload,
+            "total_uploaded": metrics["total_uploaded"],
+            "deduplicated_count": metrics["deduplicated_count"],
+            "final_count": metrics["final_count"],
+            "file_count": metrics["file_count"],
+        }
+    )
+
+
+@app.get("/api/batches/{batch_id}/duplicates")
+def list_batch_duplicates(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    duplicates = db.list_duplicate_candidates(batch_id)
+    metrics = db.get_batch_metrics(batch_id)
+    duplicates_payload = []
+    for candidate in duplicates:
+        duplicates_payload.append(
+            {
+                "first_name": candidate.get("first_name"),
+                "last_name": candidate.get("last_name"),
+                "full_name": candidate.get("full_name"),
+                "linkedin_url": candidate.get("linkedin_url"),
+            }
+        )
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "batch_name": batch.get("name"),
+            "duplicates": duplicates_payload,
+            "deduplicated_count": metrics["deduplicated_count"],
+        }
+    )
+
+
+@app.get("/api/batches/{batch_id}/duplicates/export")
+def export_batch_duplicates(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    role_name = db.get_role_name(batch.get("role_id") or "") or batch.get("role_id")
+    safe_role = safe_name(role_name or "role")
+    date_stamp = time.strftime("%Y-%m-%d")
+    filename = f"duplicates_{safe_role}_{date_stamp}.csv"
+
+    duplicates = db.list_duplicate_candidates(batch_id)
+    buffer = StringIO()
+    fieldnames = ["full_name", "first_name", "last_name", "linkedin_url"]
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    for candidate in duplicates:
+        writer.writerow({field: candidate.get(field) or "" for field in fieldnames})
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/batches/{batch_id}/export")
+def export_batch_candidates(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    role_name = db.get_role_name(batch.get("role_id") or "") or batch.get("role_id")
+    safe_role = safe_name(role_name or "role")
+    date_stamp = time.strftime("%Y-%m-%d")
+    filename = f"standardized_{safe_role}_{date_stamp}.csv"
+
+    candidates = db.list_standardized_candidates(batch_id)
+    buffer = StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=STANDARDIZED_FIELDS)
+    writer.writeheader()
+    for candidate in candidates:
+        writer.writerow({field: candidate.get(field) or "" for field in STANDARDIZED_FIELDS})
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/batches/{batch_id}/approve")
+def approve_batch(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    if batch.get("status") == "approved":
+        return JSONResponse(
+            {
+                "batch_id": batch_id,
+                "status": batch.get("status"),
+                "approved_at": batch.get("approved_at"),
+            }
+        )
+
+    try:
+        updated = db.approve_candidate_batch(batch_id)
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to approve batch: {exc}"},
+            status_code=500,
+        )
+
+    if not updated:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    return JSONResponse(
+        {
+            "batch_id": updated.get("id"),
+            "status": updated.get("status"),
+            "approved_at": updated.get("approved_at"),
+        }
+    )
+
+
+@app.post("/api/roles/{role_id}/test-runs")
+def create_test_run(role_id: str, payload: Dict[str, Any] = Body(...)):
+    batch_id = payload.get("batch_id")
+    criteria_version_id = payload.get("criteria_version_id")
+
+    if not batch_id:
+        return JSONResponse({"error": "batch_id is required"}, status_code=400)
+
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    if not criteria_version_id:
+        latest = db.get_latest_criteria_version(role_id)
+        if not latest:
+            return JSONResponse(
+                {"error": "No criteria version found for role"},
+                status_code=400,
+            )
+        criteria_version_id = latest["id"]
+
+    candidate_ids = db.list_random_standardized_candidate_ids(batch_id, limit=50)
+    if not candidate_ids:
+        return JSONResponse(
+            {"error": "No standardized candidates available for batch"},
+            status_code=400,
+        )
+
+    try:
+        test_run_id = db.create_test_run(
+            role_id, criteria_version_id, candidate_ids
+        )
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to create test run: {exc}"},
+            status_code=500,
+        )
+
+    return JSONResponse(
+        {
+            "test_run_id": test_run_id,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "criteria_version_id": criteria_version_id,
+            "candidate_count": len(candidate_ids),
+        }
+    )
+
+
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
 def run_detail(request: Request, run_id: str):
     st = get_run_or_404(run_id)
     if not st:
         return HTMLResponse("Run not found", status_code=404)
+
+    run_step_map = {
+        "queued": "upload",
+        "running": "standardize",
+        "standardized": "review",
+        "evaluating": "filter",
+        "done": "results",
+        "error": "results",
+    }
+    current_step = run_step_map.get(st.state, "results")
 
     return templates.TemplateResponse(
         "run.html",
@@ -318,6 +939,89 @@ def run_detail(request: Request, run_id: str):
             "request": request,
             "run": st,
             "run_json": json.dumps(asdict(st), indent=2),
+            "stepper": build_stepper_context(current_step),
+        },
+    )
+
+
+@app.get("/roles/{role_id}/batches/{batch_id}/map", response_class=HTMLResponse)
+def map_fields_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
+    return templates.TemplateResponse(
+        "map.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "stepper": build_stepper_context(
+                step_from_batch_status(batch.get("status")), role_id, batch_id
+            ),
+        },
+    )
+
+
+@app.get("/roles/{role_id}/batches/{batch_id}/review", response_class=HTMLResponse)
+def review_batch_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
+    return templates.TemplateResponse(
+        "review.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "stepper": build_stepper_context(
+                step_from_batch_status(batch.get("status")), role_id, batch_id
+            ),
+        },
+    )
+
+
+@app.get("/roles/{role_id}/batches/{batch_id}/duplicates", response_class=HTMLResponse)
+def duplicates_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
+    return templates.TemplateResponse(
+        "duplicates.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "stepper": build_stepper_context(
+                step_from_batch_status(batch.get("status")), role_id, batch_id
+            ),
+        },
+    )
+
+
+@app.get("/roles/{role_id}/batches/{batch_id}/test-run", response_class=HTMLResponse)
+def test_run_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
+    metrics = db.get_batch_metrics(batch_id)
+
+    return templates.TemplateResponse(
+        "test_run.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "batch_name": batch.get("name"),
+            "batch_status": batch.get("status"),
+            "file_count": metrics["file_count"],
+            "final_count": metrics["final_count"],
+            "stepper": build_stepper_context(
+                step_from_batch_status(batch.get("status")), role_id, batch_id
+            ),
         },
     )
 

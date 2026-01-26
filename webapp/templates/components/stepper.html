@@ -1,0 +1,16 @@
+<nav class="stepper" aria-label="Workflow progress">
+  {% for step in stepper.steps %}
+    <div class="step {{ step.state }}">
+      {% if step.state == "completed" %}
+        <span class="step-icon" aria-hidden="true">&#10003;</span>
+      {% endif %}
+      {% if step.url and step.state == "completed" %}
+        <a class="step-label" href="{{ step.url }}">{{ step.label }}</a>
+      {% else %}
+        <span class="step-label" {% if step.state == "active" %}aria-current="step"{% endif %}>
+          {{ step.label }}
+        </span>
+      {% endif %}
+    </div>
+  {% endfor %}
+</nav>

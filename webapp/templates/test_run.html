@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Test Run Setup - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/stepper.css" />
+  <link rel="stylesheet" href="/static/test_run.css" />
+</head>
+<body>
+  <div class="page" data-role-id="{{ role_id }}" data-batch-id="{{ batch_id }}">
+    <header class="page-header">
+      <div>
+        <p class="kicker">Candidate Standardization</p>
+        <h1>Test Run Setup</h1>
+        <p class="subtitle">Confirm the batch details and start a test run sample.</p>
+      </div>
+      <div class="batch-chip">
+        <span>Batch</span>
+        <strong>{{ batch_id }}</strong>
+      </div>
+    </header>
+
+    {% include "components/stepper.html" %}
+
+    <section class="summary">
+      <div class="summary-main">
+        <span class="label">Batch name</span>
+        <strong>{{ batch_name or "Batch" }}</strong>
+        <span class="status">Status: {{ batch_status or "standardized" }}</span>
+      </div>
+      <div class="summary-metrics">
+        <div class="metric">
+          <span class="metric-label">Files</span>
+          <strong>{{ file_count }}</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Candidates</span>
+          <strong>{{ final_count }}</strong>
+        </div>
+      </div>
+      <div class="summary-actions">
+        <button class="btn" id="start-test-run" type="button">Start Test Run</button>
+        <div class="message" id="test-run-message" role="status"></div>
+      </div>
+    </section>
+
+    <section class="note-card">
+      <h2>What happens next</h2>
+      <p>
+        Starting a test run will randomly sample up to 50 standardized candidates
+        from this batch and prepare them for AI filtering evaluation.
+      </p>
+    </section>
+  </div>
+
+  <script src="/static/test_run.js"></script>
+</body>
+</html>

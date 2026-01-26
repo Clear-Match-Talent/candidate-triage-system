@@ -1,13 +1,14 @@
-"""SQLite persistence layer for runs"""
-import sqlite3
+"""SQLite persistence layer for runs and data."""
 import json
 import logging
-from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
-from dataclasses import asdict
+import sqlite3
 import time
+import uuid
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 DB_PATH = Path(__file__).resolve().parents[1] / "runs.db"
+DATA_DB_PATH = Path(__file__).resolve().parents[1] / "data.db"
 LOG_PATH = Path(__file__).resolve().parents[1] / "runs" / "db_errors.log"
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -26,6 +27,14 @@ def get_connection():
     """Get database connection"""
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
+    return conn
+
+
+def get_data_connection():
+    """Get data.db connection"""
+    conn = sqlite3.connect(str(DATA_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -61,6 +70,472 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+
+def create_candidate_batch(role_id: str, name: str, status: str) -> str:
+    """Create a candidate batch and return its ID."""
+    batch_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO candidate_batches (id, role_id, name, status)
+            VALUES (?, ?, ?, ?)
+            """,
+            (batch_id, role_id, name, status),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to create candidate batch role_id=%s", role_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return batch_id
+
+
+def insert_batch_file_upload(
+    batch_id: str,
+    filename: str,
+    row_count: int,
+    headers: List[str],
+) -> str:
+    """Insert a batch file upload record and return its ID."""
+    upload_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO batch_file_uploads (id, batch_id, filename, row_count, headers)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (upload_id, batch_id, filename, row_count, json.dumps(headers)),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to insert batch upload batch_id=%s", batch_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return upload_id
+
+
+def get_candidate_batch(batch_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a candidate batch by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM candidate_batches WHERE id = ?", (batch_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def get_role_name(role_id: str) -> Optional[str]:
+    """Fetch role name by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT name FROM roles WHERE id = ?", (role_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return row["name"]
+    finally:
+        conn.close()
+
+
+def list_batch_file_uploads(batch_id: str) -> List[Dict[str, Any]]:
+    """List uploaded files for a batch with parsed headers."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, batch_id, filename, uploaded_at, row_count, headers
+            FROM batch_file_uploads
+            WHERE batch_id = ?
+            ORDER BY uploaded_at ASC
+            """,
+            (batch_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    uploads: List[Dict[str, Any]] = []
+    for row in rows:
+        headers = []
+        if row["headers"]:
+            try:
+                headers = json.loads(row["headers"])
+            except json.JSONDecodeError:
+                headers = []
+        uploads.append(
+            {
+                "id": row["id"],
+                "batch_id": row["batch_id"],
+                "filename": row["filename"],
+                "uploaded_at": row["uploaded_at"],
+                "row_count": row["row_count"],
+                "headers": headers,
+            }
+        )
+    return uploads
+
+
+def list_standardized_candidates(batch_id: str) -> List[Dict[str, Any]]:
+    """List standardized candidates for a batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                location,
+                current_company,
+                current_title
+            FROM raw_candidates
+            WHERE batch_id = ? AND status = 'standardized'
+            ORDER BY created_at ASC
+            """,
+            (batch_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    return [dict(row) for row in rows]
+
+
+def list_duplicate_candidates(batch_id: str) -> List[Dict[str, Any]]:
+    """List duplicate candidates for a batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                created_at
+            FROM raw_candidates
+            WHERE batch_id = ? AND status = 'duplicate'
+            ORDER BY created_at ASC
+            """,
+            (batch_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    return [dict(row) for row in rows]
+
+
+def list_raw_candidates(
+    batch_id: str,
+    exclude_duplicates: bool = True,
+) -> List[Dict[str, Any]]:
+    """List raw candidates for a batch with parsed JSON payloads."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    where_clause = "batch_id = ?"
+    params: Tuple[Any, ...] = (batch_id,)
+    if exclude_duplicates:
+        where_clause += " AND status != 'duplicate'"
+    try:
+        cursor.execute(
+            f"""
+            SELECT
+                id,
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                location,
+                current_company,
+                current_title,
+                raw_data,
+                standardized_data,
+                status,
+                created_at
+            FROM raw_candidates
+            WHERE {where_clause}
+            ORDER BY created_at ASC
+            """,
+            params,
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        raw_data = None
+        if row["raw_data"]:
+            try:
+                raw_data = json.loads(row["raw_data"])
+            except json.JSONDecodeError:
+                raw_data = None
+        standardized_data = None
+        if row["standardized_data"]:
+            try:
+                standardized_data = json.loads(row["standardized_data"])
+            except json.JSONDecodeError:
+                standardized_data = None
+        candidates.append(
+            {
+                "id": row["id"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "full_name": row["full_name"],
+                "linkedin_url": row["linkedin_url"],
+                "location": row["location"],
+                "current_company": row["current_company"],
+                "current_title": row["current_title"],
+                "raw_data": raw_data,
+                "standardized_data": standardized_data,
+                "status": row["status"],
+                "created_at": row["created_at"],
+            }
+        )
+    return candidates
+
+
+def get_batch_metrics(batch_id: str) -> Dict[str, int]:
+    """Return aggregate metrics for a batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) AS file_count,
+                COALESCE(SUM(row_count), 0) AS total_uploaded
+            FROM batch_file_uploads
+            WHERE batch_id = ?
+            """,
+            (batch_id,),
+        )
+        uploads_row = cursor.fetchone()
+        cursor.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0)
+                    AS deduplicated_count,
+                COALESCE(SUM(CASE WHEN status = 'standardized' THEN 1 ELSE 0 END), 0)
+                    AS final_count
+            FROM raw_candidates
+            WHERE batch_id = ?
+            """,
+            (batch_id,),
+        )
+        candidates_row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    return {
+        "file_count": int(uploads_row["file_count"] or 0),
+        "total_uploaded": int(uploads_row["total_uploaded"] or 0),
+        "deduplicated_count": int(candidates_row["deduplicated_count"] or 0),
+        "final_count": int(candidates_row["final_count"] or 0),
+    }
+
+
+def update_candidate_batch_status(batch_id: str, status: str) -> None:
+    """Update status for a candidate batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE candidate_batches SET status = ? WHERE id = ?",
+            (status, batch_id),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception(
+            "Failed to update candidate batch status batch_id=%s status=%s",
+            batch_id,
+            status,
+        )
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def approve_candidate_batch(batch_id: str) -> Optional[Dict[str, Any]]:
+    """Approve a candidate batch and return the updated record."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE candidate_batches
+            SET status = 'approved', approved_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (batch_id,),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM candidate_batches WHERE id = ?", (batch_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    except Exception:
+        logger.exception("Failed to approve candidate batch batch_id=%s", batch_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def get_latest_criteria_version(role_id: str) -> Optional[Dict[str, Any]]:
+    """Return the latest criteria version for a role."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, role_id, version, criteria_data, created_at
+            FROM criteria_versions
+            WHERE role_id = ?
+            ORDER BY version DESC, created_at DESC
+            LIMIT 1
+            """,
+            (role_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def list_random_standardized_candidate_ids(
+    batch_id: str, limit: int = 50
+) -> List[str]:
+    """Return random standardized candidate IDs for a batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id
+            FROM raw_candidates
+            WHERE batch_id = ? AND status = 'standardized'
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (batch_id, limit),
+        )
+        rows = cursor.fetchall()
+        return [row["id"] for row in rows]
+    finally:
+        conn.close()
+
+
+def create_test_run(
+    role_id: str, criteria_version_id: str, candidate_ids: List[str]
+) -> str:
+    """Create a test run record and return its ID."""
+    test_run_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO test_runs (id, role_id, criteria_version_id, candidate_ids)
+            VALUES (?, ?, ?, ?)
+            """,
+            (test_run_id, role_id, criteria_version_id, json.dumps(candidate_ids)),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to create test run role_id=%s", role_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return test_run_id
+
+
+def insert_raw_candidates(
+    batch_id: str,
+    role_id: str,
+    candidates: List[Dict[str, Any]],
+) -> None:
+    """Insert raw candidates for a batch."""
+    if not candidates:
+        return
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        rows: List[Tuple[Any, ...]] = []
+        for candidate in candidates:
+            rows.append(
+                (
+                    str(uuid.uuid4()),
+                    batch_id,
+                    role_id,
+                    candidate.get("first_name"),
+                    candidate.get("last_name"),
+                    candidate.get("full_name"),
+                    candidate.get("linkedin_url"),
+                    candidate.get("location"),
+                    candidate.get("current_company"),
+                    candidate.get("current_title"),
+                    json.dumps(candidate.get("raw_data"))
+                    if candidate.get("raw_data") is not None
+                    else None,
+                    json.dumps(candidate.get("standardized_data"))
+                    if candidate.get("standardized_data") is not None
+                    else None,
+                    candidate.get("status"),
+                )
+            )
+        cursor.executemany(
+            """
+            INSERT INTO raw_candidates (
+                id,
+                batch_id,
+                role_id,
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                location,
+                current_company,
+                current_title,
+                raw_data,
+                standardized_data,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to insert raw candidates batch_id=%s", batch_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _prepare_standardized_data(standardized_data: Optional[List[Dict[str, Any]]]) -> Tuple[Optional[str], Optional[List[Tuple[int, str]]]]:

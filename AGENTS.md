@@ -133,6 +133,10 @@ from webapp.db import get_candidates, insert_candidate
 # DO use the helper functions
 ```
 
+For candidate batch uploads, save files under `uploads/batches/{batch_id}` and
+persist metadata with `webapp.db.create_candidate_batch` and
+`webapp.db.insert_batch_file_upload`.
+
 ### CSV Processing
 ```python
 # Always use pandas for CSV I/O
@@ -142,6 +146,11 @@ df = pd.read_csv('input.csv')
 # ... process ...
 df.to_csv('output.csv', index=False)
 ```
+
+### UI Components
+The workflow stepper lives in `webapp/templates/components/stepper.html` with shared
+styles in `webapp/static/stepper.css`. Pass `stepper` context from `webapp/main.py`
+using `build_stepper_context(...)` so the active step reflects batch status.
 
 ### LLM Calls
 ```python
@@ -265,6 +274,7 @@ This file contains:
 - Read this document FIRST
 - Implement exactly as specified
 - Do not deviate from documented structure without updating the spec
+- Apply schema changes with `python3 database/migrate.py --sql database/schema.sql` (targets `data.db`).
 
 ---
 
