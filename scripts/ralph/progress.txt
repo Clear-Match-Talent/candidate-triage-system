@@ -40,3 +40,15 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context (e.g., "the evaluation panel is in component X")
     - Suggest-mappings uses `batch_file_uploads.headers` and calls Claude per file.
 ---
+## 2026-01-26 07:36:29 UTC - US-003B
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added mapping page route, template, styles, and client-side logic to load AI suggestions, prefill mappings, validate linkedin_url, and submit mappings.
+- Files changed: `webapp/main.py`, `webapp/templates/map.html`, `webapp/static/map.css`, `webapp/static/map.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Mapping UI fetches suggestions from `/api/batches/:batch_id/suggest-mappings` and posts selections to `/api/batches/:batch_id/apply-mappings`.
+---

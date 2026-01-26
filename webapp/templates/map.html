@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Map Fields - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/map.css" />
+</head>
+<body>
+  <div class="page" data-role-id="{{ role_id }}" data-batch-id="{{ batch_id }}">
+    <header class="page-header">
+      <div>
+        <p class="kicker">Candidate Standardization</p>
+        <h1>Map CSV Fields</h1>
+        <p class="subtitle">Review each source column and assign it to the standardized schema.</p>
+      </div>
+      <div class="batch-chip">
+        <span>Batch</span>
+        <strong>{{ batch_id }}</strong>
+      </div>
+    </header>
+
+    <nav class="stepper">
+      <div class="step">Upload</div>
+      <div class="step active">Map Fields</div>
+      <div class="step">Standardize</div>
+      <div class="step">Review</div>
+      <div class="step">Approve</div>
+      <div class="step">Test Run</div>
+      <div class="step">Filter</div>
+      <div class="step">Results</div>
+    </nav>
+
+    <main class="content">
+      <section class="panel" id="source-panel">
+        <div class="panel-header">
+          <h2>Source Columns</h2>
+          <p>Grouped by file. Select the target field for each column.</p>
+        </div>
+        <div id="files" class="file-list">
+          <div class="empty-state">Loading mappings...</div>
+        </div>
+      </section>
+
+      <aside class="panel" id="standard-panel">
+        <div class="panel-header">
+          <h2>Standardized Fields</h2>
+          <p>These are the target fields for the standardized schema.</p>
+        </div>
+        <ul id="standardized-fields" class="field-list"></ul>
+        <div class="required-card">
+          <strong>Required:</strong>
+          <span>linkedin_url must be mapped before you can continue.</span>
+        </div>
+        <div class="actions">
+          <p id="mapping-error" class="error hidden">Please map a column to linkedin_url.</p>
+          <button id="apply-mappings" disabled>Apply Mappings</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="/static/map.js"></script>
+</body>
+</html>

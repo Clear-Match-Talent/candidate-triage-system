@@ -492,6 +492,18 @@ def run_detail(request: Request, run_id: str):
     )
 
 
+@app.get("/roles/{role_id}/batches/{batch_id}/map", response_class=HTMLResponse)
+def map_fields_page(request: Request, role_id: str, batch_id: str):
+    return templates.TemplateResponse(
+        "map.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+        },
+    )
+
+
 @app.get("/api/runs/{run_id}")
 def run_status_json(run_id: str):
     """JSON API endpoint for run status"""
