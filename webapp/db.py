@@ -176,6 +176,92 @@ def list_batch_file_uploads(batch_id: str) -> List[Dict[str, Any]]:
     return uploads
 
 
+def update_candidate_batch_status(batch_id: str, status: str) -> None:
+    """Update status for a candidate batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE candidate_batches SET status = ? WHERE id = ?",
+            (status, batch_id),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception(
+            "Failed to update candidate batch status batch_id=%s status=%s",
+            batch_id,
+            status,
+        )
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def insert_raw_candidates(
+    batch_id: str,
+    role_id: str,
+    candidates: List[Dict[str, Any]],
+) -> None:
+    """Insert raw candidates for a batch."""
+    if not candidates:
+        return
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        rows: List[Tuple[Any, ...]] = []
+        for candidate in candidates:
+            rows.append(
+                (
+                    str(uuid.uuid4()),
+                    batch_id,
+                    role_id,
+                    candidate.get("first_name"),
+                    candidate.get("last_name"),
+                    candidate.get("full_name"),
+                    candidate.get("linkedin_url"),
+                    candidate.get("location"),
+                    candidate.get("current_company"),
+                    candidate.get("current_title"),
+                    json.dumps(candidate.get("raw_data"))
+                    if candidate.get("raw_data") is not None
+                    else None,
+                    json.dumps(candidate.get("standardized_data"))
+                    if candidate.get("standardized_data") is not None
+                    else None,
+                    candidate.get("status"),
+                )
+            )
+        cursor.executemany(
+            """
+            INSERT INTO raw_candidates (
+                id,
+                batch_id,
+                role_id,
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                location,
+                current_company,
+                current_title,
+                raw_data,
+                standardized_data,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to insert raw candidates batch_id=%s", batch_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def _prepare_standardized_data(standardized_data: Optional[List[Dict[str, Any]]]) -> Tuple[Optional[str], Optional[List[Tuple[int, str]]]]:
     if not standardized_data:
         return None, None

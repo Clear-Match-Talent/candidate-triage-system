@@ -52,3 +52,15 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context (e.g., "the evaluation panel is in component X")
     - Mapping UI fetches suggestions from `/api/batches/:batch_id/suggest-mappings` and posts selections to `/api/batches/:batch_id/apply-mappings`.
 ---
+## 2026-01-26 07:39:29 UTC - US-004
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added apply-mappings API to read batch CSVs, apply user mappings, split full_name when needed, deduplicate by linkedin_url, insert raw_candidates, and update batch status.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Apply-mappings reads CSVs from `uploads/batches/{batch_id}` and persists rows in `raw_candidates`.
+---

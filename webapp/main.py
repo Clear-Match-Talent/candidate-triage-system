@@ -25,9 +25,9 @@ import time
 import uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import Body, FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -146,6 +146,47 @@ def read_csv_metadata(file_path: Path) -> Tuple[List[str], int]:
     raise ValueError(f"Unable to decode CSV: {file_path.name}")
 
 
+def read_csv_with_fallback(file_path: Path) -> pd.DataFrame:
+    """Read CSV with UTF-8 fallback to latin1."""
+    try:
+        return pd.read_csv(file_path, dtype=str, keep_default_na=False)
+    except UnicodeDecodeError:
+        return pd.read_csv(file_path, dtype=str, keep_default_na=False, encoding="latin1")
+
+
+def normalize_value(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+    return str(value)
+
+
+def apply_mappings_to_row(
+    row: Dict[str, Optional[str]],
+    mappings: Dict[str, str],
+) -> Dict[str, Optional[str]]:
+    standardized: Dict[str, Optional[str]] = {}
+    for source, target in mappings.items():
+        if target == "skip":
+            continue
+        if target not in STANDARDIZED_FIELDS:
+            continue
+        value = normalize_value(row.get(source))
+        if value is None:
+            continue
+        if not standardized.get(target):
+            standardized[target] = value
+    full_name = normalize_value(standardized.get("full_name"))
+    if full_name and not standardized.get("first_name") and not standardized.get("last_name"):
+        parts = full_name.split()
+        if parts:
+            standardized["first_name"] = parts[0]
+            standardized["last_name"] = " ".join(parts[1:]) if len(parts) > 1 else ""
+    return standardized
+
+
 def extract_json_mapping(text: str) -> Dict[str, str]:
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
@@ -173,6 +214,22 @@ def suggest_mappings_for_headers(headers: List[str]) -> Dict[str, str]:
         (block.text for block in response.content if hasattr(block, "text")), ""
     )
     return extract_json_mapping(text_response)
+
+
+def validate_mapping_payload(files_payload: List[Dict[str, Any]]) -> Tuple[bool, str]:
+    has_linkedin = False
+    for file_payload in files_payload:
+        mappings = file_payload.get("mappings", {})
+        if not isinstance(mappings, dict):
+            return False, "Invalid mappings payload"
+        for target in mappings.values():
+            if target == "linkedin_url":
+                has_linkedin = True
+            if target != "skip" and target not in STANDARDIZED_FIELDS:
+                return False, "Invalid target field in mappings"
+    if not has_linkedin:
+        return False, "linkedin_url mapping is required"
+    return True, ""
 
 
 def restandardize_run(run_id: str) -> None:
@@ -472,6 +529,107 @@ def suggest_batch_mappings(batch_id: str):
             "batch_id": batch_id,
             "files": files_payload,
             "standardized_fields": STANDARDIZED_FIELDS,
+        }
+    )
+
+
+@app.post("/api/batches/{batch_id}/apply-mappings")
+def apply_batch_mappings(
+    batch_id: str,
+    payload: Dict[str, Any] = Body(...),
+):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    files_payload = payload.get("files", [])
+    if not files_payload:
+        return JSONResponse({"error": "No mappings provided"}, status_code=400)
+
+    is_valid, error_message = validate_mapping_payload(files_payload)
+    if not is_valid:
+        return JSONResponse({"error": error_message}, status_code=400)
+
+    uploads = db.list_batch_file_uploads(batch_id)
+    if not uploads:
+        return JSONResponse({"error": "No files found for batch"}, status_code=400)
+
+    mappings_by_filename = {
+        file_payload.get("filename"): file_payload.get("mappings", {})
+        for file_payload in files_payload
+    }
+
+    for upload in uploads:
+        if upload.get("filename") not in mappings_by_filename:
+            return JSONResponse(
+                {"error": f"Missing mappings for {upload.get('filename')}"},
+                status_code=400,
+            )
+
+    total_uploaded = sum(upload.get("row_count") or 0 for upload in uploads)
+    seen_linkedin: set[str] = set()
+    candidates_payload: List[Dict[str, Any]] = []
+    deduplicated_count = 0
+    final_count = 0
+
+    for upload in uploads:
+        filename = upload.get("filename")
+        if not filename:
+            continue
+        file_path = UPLOADS_DIR / batch_id / filename
+        if not file_path.exists():
+            return JSONResponse(
+                {"error": f"Missing file on disk: {filename}"},
+                status_code=400,
+            )
+        df = read_csv_with_fallback(file_path)
+        mappings = mappings_by_filename.get(filename, {})
+
+        for _, row in df.iterrows():
+            raw_row = row.to_dict()
+            standardized_data = apply_mappings_to_row(raw_row, mappings)
+            linkedin_url = normalize_value(standardized_data.get("linkedin_url"))
+            normalized_key = linkedin_url.lower() if linkedin_url else ""
+            status = "standardized"
+            if normalized_key:
+                if normalized_key in seen_linkedin:
+                    status = "duplicate"
+                    deduplicated_count += 1
+                else:
+                    seen_linkedin.add(normalized_key)
+            if status == "standardized":
+                final_count += 1
+
+            candidates_payload.append(
+                {
+                    "first_name": standardized_data.get("first_name"),
+                    "last_name": standardized_data.get("last_name"),
+                    "full_name": standardized_data.get("full_name"),
+                    "linkedin_url": linkedin_url,
+                    "location": standardized_data.get("location"),
+                    "current_company": standardized_data.get("current_company"),
+                    "current_title": standardized_data.get("current_title"),
+                    "raw_data": raw_row,
+                    "standardized_data": standardized_data,
+                    "status": status,
+                }
+            )
+
+    try:
+        db.insert_raw_candidates(batch_id, batch.get("role_id"), candidates_payload)
+        db.update_candidate_batch_status(batch_id, "standardized")
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to apply mappings: {exc}"},
+            status_code=500,
+        )
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "total_uploaded": total_uploaded,
+            "deduplicated_count": deduplicated_count,
+            "final_count": final_count,
         }
     )
 
