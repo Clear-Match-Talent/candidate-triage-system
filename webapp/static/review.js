@@ -7,6 +7,8 @@ const metricFiles = document.getElementById('metric-files');
 const metricUploaded = document.getElementById('metric-uploaded');
 const metricDeduped = document.getElementById('metric-deduped');
 const metricFinal = document.getElementById('metric-final');
+const dedupSummaryText = document.getElementById('dedup-summary-text');
+const viewDuplicatesLink = document.getElementById('view-duplicates');
 const tableContainer = document.getElementById('table-container');
 const exportBtn = document.getElementById('export-btn');
 const approveBtn = document.getElementById('approve-btn');
@@ -165,6 +167,17 @@ const updateMetrics = (payload) => {
 
   if (batchNameInput && payload.batch_name) {
     batchNameInput.value = payload.batch_name;
+  }
+
+  if (dedupSummaryText) {
+    const deduped = payload.deduplicated_count ?? 0;
+    dedupSummaryText.textContent = `${deduped} duplicates removed by LinkedIn URL.`;
+  }
+
+  if (viewDuplicatesLink && roleId && batchId) {
+    const deduped = payload.deduplicated_count ?? 0;
+    viewDuplicatesLink.href = `/roles/${roleId}/batches/${batchId}/duplicates`;
+    viewDuplicatesLink.classList.toggle('disabled', deduped <= 0);
   }
 };
 

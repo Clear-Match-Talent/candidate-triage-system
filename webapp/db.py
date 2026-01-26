@@ -218,6 +218,32 @@ def list_standardized_candidates(batch_id: str) -> List[Dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def list_duplicate_candidates(batch_id: str) -> List[Dict[str, Any]]:
+    """List duplicate candidates for a batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                created_at
+            FROM raw_candidates
+            WHERE batch_id = ? AND status = 'duplicate'
+            ORDER BY created_at ASC
+            """,
+            (batch_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    return [dict(row) for row in rows]
+
+
 def list_raw_candidates(
     batch_id: str,
     exclude_duplicates: bool = True,

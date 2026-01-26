@@ -37,21 +37,27 @@
         <input id="batch-name" type="text" placeholder="Batch" />
       </div>
       <div class="summary-metrics">
-        <div class="metric">
-          <span class="metric-label">Files</span>
-          <strong id="metric-files">0</strong>
+        <div class="metric-grid">
+          <div class="metric">
+            <span class="metric-label">Files</span>
+            <strong id="metric-files">0</strong>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Total uploaded</span>
+            <strong id="metric-uploaded">0</strong>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Deduplicated</span>
+            <strong id="metric-deduped">0</strong>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Final count</span>
+            <strong id="metric-final">0</strong>
+          </div>
         </div>
-        <div class="metric">
-          <span class="metric-label">Total uploaded</span>
-          <strong id="metric-uploaded">0</strong>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Deduplicated</span>
-          <strong id="metric-deduped">0</strong>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Final count</span>
-          <strong id="metric-final">0</strong>
+        <div class="dedup-summary">
+          <span id="dedup-summary-text">0 duplicates removed by LinkedIn URL.</span>
+          <a id="view-duplicates" class="dedup-link" href="#">View duplicates</a>
         </div>
       </div>
       <div class="summary-actions">

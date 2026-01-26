@@ -112,3 +112,15 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context (e.g., "the evaluation panel is in component X")
     - Test run setup lives at `/roles/:role_id/batches/:batch_id/test-run` and uses `/api/roles/:role_id/test-runs` with `batch_id` to sample standardized candidates.
 ---
+## 2026-01-26 08:18:46 UTC - US-008
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added duplicates API/export endpoints and a duplicates review page linked from the review summary, including CSV export and table rendering.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `webapp/templates/review.html`, `webapp/static/review.css`, `webapp/static/review.js`, `webapp/templates/duplicates.html`, `webapp/static/duplicates.css`, `webapp/static/duplicates.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Duplicate candidates are exposed via `/api/batches/:batch_id/duplicates` and exported from `/api/batches/:batch_id/duplicates/export`.
+---

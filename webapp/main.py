@@ -695,6 +695,61 @@ def list_batch_candidates(batch_id: str, view: str = "standardized"):
     )
 
 
+@app.get("/api/batches/{batch_id}/duplicates")
+def list_batch_duplicates(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    duplicates = db.list_duplicate_candidates(batch_id)
+    metrics = db.get_batch_metrics(batch_id)
+    duplicates_payload = []
+    for candidate in duplicates:
+        duplicates_payload.append(
+            {
+                "first_name": candidate.get("first_name"),
+                "last_name": candidate.get("last_name"),
+                "full_name": candidate.get("full_name"),
+                "linkedin_url": candidate.get("linkedin_url"),
+            }
+        )
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "batch_name": batch.get("name"),
+            "duplicates": duplicates_payload,
+            "deduplicated_count": metrics["deduplicated_count"],
+        }
+    )
+
+
+@app.get("/api/batches/{batch_id}/duplicates/export")
+def export_batch_duplicates(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    role_name = db.get_role_name(batch.get("role_id") or "") or batch.get("role_id")
+    safe_role = safe_name(role_name or "role")
+    date_stamp = time.strftime("%Y-%m-%d")
+    filename = f"duplicates_{safe_role}_{date_stamp}.csv"
+
+    duplicates = db.list_duplicate_candidates(batch_id)
+    buffer = StringIO()
+    fieldnames = ["full_name", "first_name", "last_name", "linkedin_url"]
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    for candidate in duplicates:
+        writer.writerow({field: candidate.get(field) or "" for field in fieldnames})
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/batches/{batch_id}/export")
 def export_batch_candidates(batch_id: str):
     batch = db.get_candidate_batch(batch_id)
@@ -836,6 +891,18 @@ def map_fields_page(request: Request, role_id: str, batch_id: str):
 def review_batch_page(request: Request, role_id: str, batch_id: str):
     return templates.TemplateResponse(
         "review.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+        },
+    )
+
+
+@app.get("/roles/{role_id}/batches/{batch_id}/duplicates", response_class=HTMLResponse)
+def duplicates_page(request: Request, role_id: str, batch_id: str):
+    return templates.TemplateResponse(
+        "duplicates.html",
         {
             "request": request,
             "role_id": role_id,
