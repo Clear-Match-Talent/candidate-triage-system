@@ -56,7 +56,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -194,7 +194,7 @@
       "description": "As a recruiter, I want to see a visual progress timeline so I know where I am in the workflow.",
       "acceptanceCriteria": [
         "Create reusable stepper component in webapp/templates/components/ or webapp/static/",
-        "Steps defined: Upload → Map Fields → Standardize → Review → Approve → Test Run → Filter → Results",
+        "Steps defined: Upload \u2192 Map Fields \u2192 Standardize \u2192 Review \u2192 Approve \u2192 Test Run \u2192 Filter \u2192 Results",
         "Component accepts currentStep prop and highlights active step",
         "Completed steps show checkmark icon",
         "Future steps grayed out",

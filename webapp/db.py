@@ -123,6 +123,59 @@ def insert_batch_file_upload(
     return upload_id
 
 
+def get_candidate_batch(batch_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a candidate batch by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM candidate_batches WHERE id = ?", (batch_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def list_batch_file_uploads(batch_id: str) -> List[Dict[str, Any]]:
+    """List uploaded files for a batch with parsed headers."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, batch_id, filename, uploaded_at, row_count, headers
+            FROM batch_file_uploads
+            WHERE batch_id = ?
+            ORDER BY uploaded_at ASC
+            """,
+            (batch_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    uploads: List[Dict[str, Any]] = []
+    for row in rows:
+        headers = []
+        if row["headers"]:
+            try:
+                headers = json.loads(row["headers"])
+            except json.JSONDecodeError:
+                headers = []
+        uploads.append(
+            {
+                "id": row["id"],
+                "batch_id": row["batch_id"],
+                "filename": row["filename"],
+                "uploaded_at": row["uploaded_at"],
+                "row_count": row["row_count"],
+                "headers": headers,
+            }
+        )
+    return uploads
+
+
 def _prepare_standardized_data(standardized_data: Optional[List[Dict[str, Any]]]) -> Tuple[Optional[str], Optional[List[Tuple[int, str]]]]:
     if not standardized_data:
         return None, None

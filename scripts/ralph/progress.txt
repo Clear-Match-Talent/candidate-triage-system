@@ -28,3 +28,15 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context (e.g., "the evaluation panel is in component X")
     - Upload endpoint validates CSV extensions and stores parsed headers in `batch_file_uploads.headers`.
 ---
+## 2026-01-26 07:33:15 UTC - US-003A
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added suggest-mappings API that reads batch upload headers, calls Claude for field mapping suggestions, and returns per-file mappings.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Suggest-mappings uses `batch_file_uploads.headers` and calls Claude per file.
+---

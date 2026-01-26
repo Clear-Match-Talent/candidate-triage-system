@@ -45,6 +45,15 @@ RUNS_DIR = REPO_ROOT / "runs"
 UPLOADS_DIR = REPO_ROOT / "uploads" / "batches"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+STANDARDIZED_FIELDS = [
+    "first_name",
+    "last_name",
+    "full_name",
+    "linkedin_url",
+    "location",
+    "current_company",
+    "current_title",
+]
 
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -135,6 +144,35 @@ def read_csv_metadata(file_path: Path) -> Tuple[List[str], int]:
         except UnicodeDecodeError:
             continue
     raise ValueError(f"Unable to decode CSV: {file_path.name}")
+
+
+def extract_json_mapping(text: str) -> Dict[str, str]:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError("No JSON mapping found in AI response")
+    mapping = json.loads(match.group(0))
+    if not isinstance(mapping, dict):
+        raise ValueError("AI response mapping is not a JSON object")
+    return {str(k): str(v) for k, v in mapping.items()}
+
+
+def suggest_mappings_for_headers(headers: List[str]) -> Dict[str, str]:
+    prompt = (
+        "Map these CSV columns to the standardized fields: "
+        f"{', '.join(STANDARDIZED_FIELDS)}.\n"
+        "Return ONLY a JSON object mapping each source column to a target field.\n"
+        "If a column should be skipped, map it to \"skip\".\n\n"
+        f"CSV columns: {headers}"
+    )
+    response = anthropic_client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text_response = next(
+        (block.text for block in response.content if hasattr(block, "text")), ""
+    )
+    return extract_json_mapping(text_response)
 
 
 def restandardize_run(run_id: str) -> None:
@@ -399,6 +437,41 @@ def upload_candidate_batch(
             "role_id": role_id,
             "files": files_payload,
             "total_rows": total_rows,
+        }
+    )
+
+
+@app.post("/api/batches/{batch_id}/suggest-mappings")
+def suggest_batch_mappings(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    uploads = db.list_batch_file_uploads(batch_id)
+    files_payload = []
+
+    for upload in uploads:
+        headers = upload.get("headers") or []
+        try:
+            suggested_mappings = suggest_mappings_for_headers(headers)
+        except Exception as exc:
+            return JSONResponse(
+                {"error": f"AI mapping failed: {exc}"},
+                status_code=500,
+            )
+        files_payload.append(
+            {
+                "filename": upload.get("filename"),
+                "headers": headers,
+                "suggested_mappings": suggested_mappings,
+            }
+        )
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "files": files_payload,
+            "standardized_fields": STANDARDIZED_FIELDS,
         }
     )
 
