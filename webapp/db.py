@@ -176,6 +176,116 @@ def list_batch_file_uploads(batch_id: str) -> List[Dict[str, Any]]:
     return uploads
 
 
+def list_raw_candidates(
+    batch_id: str,
+    exclude_duplicates: bool = True,
+) -> List[Dict[str, Any]]:
+    """List raw candidates for a batch with parsed JSON payloads."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    where_clause = "batch_id = ?"
+    params: Tuple[Any, ...] = (batch_id,)
+    if exclude_duplicates:
+        where_clause += " AND status != 'duplicate'"
+    try:
+        cursor.execute(
+            f"""
+            SELECT
+                id,
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                location,
+                current_company,
+                current_title,
+                raw_data,
+                standardized_data,
+                status,
+                created_at
+            FROM raw_candidates
+            WHERE {where_clause}
+            ORDER BY created_at ASC
+            """,
+            params,
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        raw_data = None
+        if row["raw_data"]:
+            try:
+                raw_data = json.loads(row["raw_data"])
+            except json.JSONDecodeError:
+                raw_data = None
+        standardized_data = None
+        if row["standardized_data"]:
+            try:
+                standardized_data = json.loads(row["standardized_data"])
+            except json.JSONDecodeError:
+                standardized_data = None
+        candidates.append(
+            {
+                "id": row["id"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "full_name": row["full_name"],
+                "linkedin_url": row["linkedin_url"],
+                "location": row["location"],
+                "current_company": row["current_company"],
+                "current_title": row["current_title"],
+                "raw_data": raw_data,
+                "standardized_data": standardized_data,
+                "status": row["status"],
+                "created_at": row["created_at"],
+            }
+        )
+    return candidates
+
+
+def get_batch_metrics(batch_id: str) -> Dict[str, int]:
+    """Return aggregate metrics for a batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) AS file_count,
+                COALESCE(SUM(row_count), 0) AS total_uploaded
+            FROM batch_file_uploads
+            WHERE batch_id = ?
+            """,
+            (batch_id,),
+        )
+        uploads_row = cursor.fetchone()
+        cursor.execute(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0)
+                    AS deduplicated_count,
+                COALESCE(SUM(CASE WHEN status = 'standardized' THEN 1 ELSE 0 END), 0)
+                    AS final_count
+            FROM raw_candidates
+            WHERE batch_id = ?
+            """,
+            (batch_id,),
+        )
+        candidates_row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    return {
+        "file_count": int(uploads_row["file_count"] or 0),
+        "total_uploaded": int(uploads_row["total_uploaded"] or 0),
+        "deduplicated_count": int(candidates_row["deduplicated_count"] or 0),
+        "final_count": int(candidates_row["final_count"] or 0),
+    }
+
+
 def update_candidate_batch_status(batch_id: str, status: str) -> None:
     """Update status for a candidate batch."""
     conn = get_data_connection()

@@ -64,3 +64,15 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context (e.g., "the evaluation panel is in component X")
     - Apply-mappings reads CSVs from `uploads/batches/{batch_id}` and persists rows in `raw_candidates`.
 ---
+## 2026-01-26 07:41:59 UTC - US-005A
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added batch candidates review API with view-based payloads and batch metrics.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Review API pulls batch metrics from `batch_file_uploads` and `raw_candidates` and excludes duplicates.
+---

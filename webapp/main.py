@@ -634,6 +634,58 @@ def apply_batch_mappings(
     )
 
 
+@app.get("/api/batches/{batch_id}/candidates")
+def list_batch_candidates(batch_id: str, view: str = "standardized"):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    normalized_view = (view or "standardized").lower()
+    if normalized_view not in {"raw", "standardized", "comparison"}:
+        return JSONResponse({"error": "Invalid view"}, status_code=400)
+
+    candidates = db.list_raw_candidates(batch_id, exclude_duplicates=True)
+    metrics = db.get_batch_metrics(batch_id)
+
+    candidates_payload: List[Dict[str, Any]] = []
+    for candidate in candidates:
+        if normalized_view == "raw":
+            candidates_payload.append({"raw_data": candidate.get("raw_data")})
+            continue
+
+        standardized_payload = {
+            "first_name": candidate.get("first_name"),
+            "last_name": candidate.get("last_name"),
+            "full_name": candidate.get("full_name"),
+            "linkedin_url": candidate.get("linkedin_url"),
+            "location": candidate.get("location"),
+            "current_company": candidate.get("current_company"),
+            "current_title": candidate.get("current_title"),
+        }
+
+        if normalized_view == "comparison":
+            candidates_payload.append(
+                {
+                    "raw_data": candidate.get("raw_data"),
+                    **standardized_payload,
+                }
+            )
+        else:
+            candidates_payload.append(standardized_payload)
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "view": normalized_view,
+            "candidates": candidates_payload,
+            "total_uploaded": metrics["total_uploaded"],
+            "deduplicated_count": metrics["deduplicated_count"],
+            "final_count": metrics["final_count"],
+            "file_count": metrics["file_count"],
+        }
+    )
+
+
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
 def run_detail(request: Request, run_id: str):
     st = get_run_or_404(run_id)
