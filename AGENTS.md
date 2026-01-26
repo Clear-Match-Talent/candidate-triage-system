@@ -133,6 +133,10 @@ from webapp.db import get_candidates, insert_candidate
 # DO use the helper functions
 ```
 
+For candidate batch uploads, save files under `uploads/batches/{batch_id}` and
+persist metadata with `webapp.db.create_candidate_batch` and
+`webapp.db.insert_batch_file_upload`.
+
 ### CSV Processing
 ```python
 # Always use pandas for CSV I/O

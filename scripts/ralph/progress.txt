@@ -3,6 +3,7 @@ Started: Mon Jan 26 07:24:00 UTC 2026
 ---
 ## Codebase Patterns
 - Database schema lives in `database/schema.sql` and is applied via `python3 database/migrate.py --sql <file>`.
+- Batch uploads are stored under `uploads/batches/{batch_id}` with metadata saved via `webapp.db.create_candidate_batch` and `webapp.db.insert_batch_file_upload`.
 ## 2026-01-26 07:26:53 UTC - US-001
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - What was implemented: Added candidate batch tables and indexes to the SQLite schema and added a migration script to apply schema SQL.
@@ -14,4 +15,16 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     - None.
   - Useful context (e.g., "the evaluation panel is in component X")
     - Candidate batch tables live alongside core AI filtering tables in `database/schema.sql`.
+---
+## 2026-01-26 07:30:51 UTC - US-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added multi-CSV batch upload API, saving files under uploads/batches/{batch_id}, capturing headers/row counts, and persisting batch/file metadata in data.db.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - Batch uploads use `uploads/batches/{batch_id}` with metadata stored via `webapp.db.create_candidate_batch` and `webapp.db.insert_batch_file_upload`.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Upload endpoint validates CSV extensions and stores parsed headers in `batch_file_uploads.headers`.
 ---

@@ -1,13 +1,14 @@
-"""SQLite persistence layer for runs"""
-import sqlite3
+"""SQLite persistence layer for runs and data."""
 import json
 import logging
-from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
-from dataclasses import asdict
+import sqlite3
 import time
+import uuid
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 DB_PATH = Path(__file__).resolve().parents[1] / "runs.db"
+DATA_DB_PATH = Path(__file__).resolve().parents[1] / "data.db"
 LOG_PATH = Path(__file__).resolve().parents[1] / "runs" / "db_errors.log"
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -26,6 +27,14 @@ def get_connection():
     """Get database connection"""
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
+    return conn
+
+
+def get_data_connection():
+    """Get data.db connection"""
+    conn = sqlite3.connect(str(DATA_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -61,6 +70,57 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+
+def create_candidate_batch(role_id: str, name: str, status: str) -> str:
+    """Create a candidate batch and return its ID."""
+    batch_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO candidate_batches (id, role_id, name, status)
+            VALUES (?, ?, ?, ?)
+            """,
+            (batch_id, role_id, name, status),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to create candidate batch role_id=%s", role_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return batch_id
+
+
+def insert_batch_file_upload(
+    batch_id: str,
+    filename: str,
+    row_count: int,
+    headers: List[str],
+) -> str:
+    """Insert a batch file upload record and return its ID."""
+    upload_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO batch_file_uploads (id, batch_id, filename, row_count, headers)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (upload_id, batch_id, filename, row_count, json.dumps(headers)),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to insert batch upload batch_id=%s", batch_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return upload_id
 
 
 def _prepare_standardized_data(standardized_data: Optional[List[Dict[str, Any]]]) -> Tuple[Optional[str], Optional[List[Tuple[int, str]]]]:

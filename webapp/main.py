@@ -25,7 +25,7 @@ import time
 import uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse
@@ -42,6 +42,7 @@ from webapp.chatbot_context import build_agent_context, format_field_stats, form
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = REPO_ROOT / "runs"
+UPLOADS_DIR = REPO_ROOT / "uploads" / "batches"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -109,6 +110,31 @@ def safe_name(s: str) -> str:
             keep.append(ch)
     out = "".join(keep).strip().replace(" ", "_")
     return out[:80] if out else "run"
+
+
+def safe_filename(name: str) -> str:
+    raw = (name or "").strip()
+    keep = []
+    for ch in raw:
+        if ch.isalnum() or ch in "-_.":
+            keep.append(ch)
+    out = "".join(keep).strip()
+    if not out:
+        out = "file.csv"
+    return out[:120]
+
+
+def read_csv_metadata(file_path: Path) -> Tuple[List[str], int]:
+    for encoding in ("utf-8", "latin1"):
+        try:
+            with file_path.open("r", encoding=encoding, newline="") as handle:
+                reader = csv.reader(handle)
+                headers = next(reader, [])
+                row_count = sum(1 for _ in reader)
+            return headers, row_count
+        except UnicodeDecodeError:
+            continue
+    raise ValueError(f"Unable to decode CSV: {file_path.name}")
 
 
 def restandardize_run(run_id: str) -> None:
@@ -304,6 +330,77 @@ def create_run(
     t.start()
 
     return RedirectResponse(url=f"/runs/{rid}", status_code=303)
+
+
+@app.post("/api/roles/{role_id}/batches/upload")
+def upload_candidate_batch(
+    role_id: str,
+    files: Optional[List[UploadFile]] = File(default=None),
+):
+    if not files:
+        return JSONResponse({"error": "No files uploaded"}, status_code=400)
+
+    invalid_files = [
+        f.filename for f in files if not (f.filename or "").lower().endswith(".csv")
+    ]
+    if invalid_files:
+        return JSONResponse(
+            {"error": "Only CSV files are supported", "files": invalid_files},
+            status_code=400,
+        )
+
+    batch_name = f"Batch {time.strftime('%Y-%m-%d %H:%M')}"
+    try:
+        batch_id = db.create_candidate_batch(role_id, batch_name, "pending")
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to create batch: {exc}"},
+            status_code=500,
+        )
+
+    batch_dir = UPLOADS_DIR / batch_id
+    batch_dir.mkdir(parents=True, exist_ok=True)
+
+    files_payload = []
+    total_rows = 0
+
+    for upload in files:
+        original_name = Path(upload.filename or "file.csv").name
+        filename = safe_filename(original_name)
+        if not filename.lower().endswith(".csv"):
+            filename = f"{filename}.csv"
+
+        dest = batch_dir / filename
+        with dest.open("wb") as handle:
+            shutil.copyfileobj(upload.file, handle)
+        upload.file.close()
+
+        try:
+            headers, row_count = read_csv_metadata(dest)
+        except Exception as exc:
+            return JSONResponse(
+                {"error": f"Failed to read CSV {filename}: {exc}"},
+                status_code=400,
+            )
+
+        total_rows += row_count
+        db.insert_batch_file_upload(batch_id, filename, row_count, headers)
+        files_payload.append(
+            {
+                "filename": filename,
+                "row_count": row_count,
+                "headers": headers,
+            }
+        )
+
+    return JSONResponse(
+        {
+            "batch_id": batch_id,
+            "role_id": role_id,
+            "files": files_payload,
+            "total_rows": total_rows,
+        }
+    )
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
