@@ -15,7 +15,7 @@ As a developer, I need a complete database schema to support the AI filtering sy
 ## Acceptance Criteria
 
 ### Schema Implementation
-- [ ] All 9 tables created with correct columns and types:
+- [ ] All 10 tables created with correct columns and types:
   - `roles` - Role/project management
   - `criteria_versions` - Versioned criteria configurations
   - `role_criteria` - Criteria configuration versions for role detail UI
@@ -25,6 +25,7 @@ As a developer, I need a complete database schema to support the AI filtering sy
   - `uploaded_files` - Document storage references
   - `role_documents` - Role document storage references
   - `test_runs` - Test candidate set persistence
+  - `test_run_results` - Test run evaluation outcomes
 
 ### Data Integrity
 - [ ] All foreign key relationships defined
@@ -48,6 +49,7 @@ As a developer, I need a complete database schema to support the AI filtering sy
   - `role_documents.role_id`
   - `role_criteria.role_id`
   - `test_runs.role_id`
+  - `test_run_results.test_run_id`
 
 ### Documentation
 - [ ] JSON structure documented for:
@@ -56,6 +58,7 @@ As a developer, I need a complete database schema to support the AI filtering sy
   - `role_criteria.gating_params`
   - `role_criteria.nice_to_haves`
   - `filter_results.criteria_evaluations`
+  - `test_run_results.criteria_evaluations`
   - `enriched_candidates.job_history`
   - `enriched_candidates.education`
   - `enriched_candidates.skills`
@@ -255,6 +258,28 @@ CREATE TABLE test_runs (
     FOREIGN KEY (criteria_version_id) REFERENCES criteria_versions(id)
 );
 CREATE INDEX idx_test_runs_role_id ON test_runs(role_id);
+
+-- =============================================================================
+-- TEST RUN RESULTS
+-- =============================================================================
+CREATE TABLE test_run_results (
+    id TEXT PRIMARY KEY,
+    test_run_id TEXT NOT NULL,
+    candidate_id TEXT,
+    candidate_name TEXT,
+    candidate_linkedin TEXT,
+    criteria_evaluations JSON,
+    final_bucket TEXT CHECK (final_bucket IN (
+        'Proceed',
+        'Human Review',
+        'Dismiss',
+        'Unable to Enrich'
+    )),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (test_run_id) REFERENCES test_runs(id)
+);
+CREATE INDEX idx_test_run_results_test_run_id ON test_run_results(test_run_id);
+CREATE INDEX idx_test_run_results_bucket ON test_run_results(final_bucket);
 ```
 
 ---

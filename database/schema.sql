@@ -151,6 +151,30 @@ CREATE TABLE IF NOT EXISTS test_runs (
 CREATE INDEX IF NOT EXISTS idx_test_runs_role_id ON test_runs(role_id);
 
 -- =============================================================================
+-- TEST RUN RESULTS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS test_run_results (
+    id TEXT PRIMARY KEY,
+    test_run_id TEXT NOT NULL,
+    candidate_id TEXT,
+    candidate_name TEXT,
+    candidate_linkedin TEXT,
+    criteria_evaluations JSON,
+    final_bucket TEXT CHECK (final_bucket IN (
+        'Proceed',
+        'Human Review',
+        'Dismiss',
+        'Unable to Enrich'
+    )),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (test_run_id) REFERENCES test_runs(id)
+);
+CREATE INDEX IF NOT EXISTS idx_test_run_results_test_run_id
+    ON test_run_results(test_run_id);
+CREATE INDEX IF NOT EXISTS idx_test_run_results_bucket
+    ON test_run_results(final_bucket);
+
+-- =============================================================================
 -- CANDIDATE BATCHES
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS candidate_batches (

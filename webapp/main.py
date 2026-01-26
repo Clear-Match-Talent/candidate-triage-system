@@ -49,6 +49,7 @@ from docx import Document
 from webapp.main_tool_calling import execute_data_modification, EXECUTE_PYTHON_TOOL
 from webapp import db
 from webapp.chatbot_context import build_agent_context, format_field_stats, format_quality_issues
+from filtering.evaluator import evaluate_candidate, build_gating_param_list
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = REPO_ROOT / "runs"
@@ -964,6 +965,29 @@ def create_role_criteria(role_id: str, payload: Dict[str, Any] = Body(...)):
     return JSONResponse({"role_id": role_id, "criteria": criteria})
 
 
+@app.post("/api/roles/{role_id}/criteria/{criteria_id}/lock")
+def lock_role_criteria(role_id: str, criteria_id: str):
+    criteria = db.get_role_criteria(criteria_id)
+    if not criteria or criteria.get("role_id") != role_id:
+        return JSONResponse({"error": "Criteria not found"}, status_code=404)
+
+    if criteria.get("is_locked"):
+        return JSONResponse({"role_id": role_id, "criteria": criteria})
+
+    try:
+        locked = db.lock_role_criteria(criteria_id)
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to lock criteria: {exc}"},
+            status_code=500,
+        )
+
+    if not locked:
+        return JSONResponse({"error": "Criteria not found"}, status_code=404)
+
+    return JSONResponse({"role_id": role_id, "criteria": locked})
+
+
 @app.post("/api/batches/{batch_id}/suggest-mappings")
 def suggest_batch_mappings(batch_id: str):
     batch = db.get_candidate_batch(batch_id)
@@ -1348,6 +1372,88 @@ def approve_batch(batch_id: str):
     )
 
 
+def _candidate_display_name(candidate: Dict[str, Any]) -> str:
+    full_name = (candidate.get("full_name") or "").strip()
+    if full_name:
+        return full_name
+    first = (candidate.get("first_name") or "").strip()
+    last = (candidate.get("last_name") or "").strip()
+    if first or last:
+        return f"{first} {last}".strip()
+    return candidate.get("linkedin_url") or "Unknown"
+
+
+def _build_empty_evaluations(
+    criteria: Dict[str, Any], reason: str
+) -> Dict[str, List[Dict[str, str]]]:
+    must_haves = criteria.get("must_haves") or []
+    gating_params = build_gating_param_list(criteria.get("gating_params"))
+    nice_to_haves = criteria.get("nice_to_haves") or []
+    make_entries = lambda items: [
+        {"criterion": item, "status": "Unsure", "reason": reason}
+        for item in items
+    ]
+    return {
+        "must_haves": make_entries(must_haves),
+        "gating_params": make_entries(gating_params),
+        "nice_to_haves": make_entries(nice_to_haves),
+    }
+
+
+def _criteria_columns(criteria: Dict[str, Any]) -> Dict[str, List[str]]:
+    return {
+        "must_haves": criteria.get("must_haves") or [],
+        "gating_params": build_gating_param_list(criteria.get("gating_params")),
+        "nice_to_haves": criteria.get("nice_to_haves") or [],
+    }
+
+
+def run_test_run(
+    test_run_id: str,
+    candidate_ids: List[str],
+    criteria: Dict[str, Any],
+) -> None:
+    logger.info(
+        "Starting test run %s with %d candidates", test_run_id, len(candidate_ids)
+    )
+    candidates = db.list_candidates_by_ids(candidate_ids)
+    candidate_map = {candidate["id"]: candidate for candidate in candidates}
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    client = Anthropic(api_key=api_key) if api_key else None
+    for idx, candidate_id in enumerate(candidate_ids, start=1):
+        candidate = candidate_map.get(candidate_id, {})
+        candidate_name = _candidate_display_name(candidate)
+        candidate_linkedin = candidate.get("linkedin_url")
+        try:
+            evaluation = evaluate_candidate(candidate, criteria, client=client)
+            criteria_evaluations = evaluation.get("evaluations", {})
+            final_bucket = evaluation.get("bucket", "Unable to Enrich")
+        except Exception as exc:
+            logger.exception(
+                "Test run evaluation failed test_run_id=%s candidate_id=%s",
+                test_run_id,
+                candidate_id,
+            )
+            criteria_evaluations = _build_empty_evaluations(
+                criteria, "Evaluation error."
+            )
+            final_bucket = "Unable to Enrich"
+        db.insert_test_run_result(
+            test_run_id=test_run_id,
+            candidate_id=candidate_id,
+            candidate_name=candidate_name,
+            candidate_linkedin=candidate_linkedin,
+            criteria_evaluations=criteria_evaluations,
+            final_bucket=final_bucket,
+        )
+        logger.info(
+            "Test run %s progress: %d/%d",
+            test_run_id,
+            idx,
+            len(candidate_ids),
+        )
+
+
 @app.post("/api/roles/{role_id}/test-runs")
 def create_test_run(role_id: str, payload: Dict[str, Any] = Body(...)):
     batch_id = payload.get("batch_id")
@@ -1360,19 +1466,35 @@ def create_test_run(role_id: str, payload: Dict[str, Any] = Body(...)):
     if not batch or batch.get("role_id") != role_id:
         return JSONResponse({"error": "Batch not found"}, status_code=404)
 
-    if not criteria_version_id:
-        latest = db.get_latest_criteria_version(role_id)
-        if not latest:
+    criteria_data: Dict[str, Any] = {}
+    if criteria_version_id:
+        criteria_version = db.get_criteria_version(criteria_version_id)
+        if not criteria_version:
             return JSONResponse(
-                {"error": "No criteria version found for role"},
+                {"error": "Criteria version not found"},
+                status_code=404,
+            )
+        criteria_data = criteria_version.get("criteria_data") or {}
+    else:
+        criteria = db.get_latest_role_criteria(role_id)
+        if not criteria:
+            return JSONResponse(
+                {"error": "No criteria configured for role"},
                 status_code=400,
             )
-        criteria_version_id = latest["id"]
+        try:
+            criteria_version_id = db.ensure_criteria_version(criteria)
+        except Exception as exc:
+            return JSONResponse(
+                {"error": f"Failed to prepare criteria version: {exc}"},
+                status_code=500,
+            )
+        criteria_data = criteria
 
     candidate_ids = db.list_random_standardized_candidate_ids(batch_id, limit=50)
-    if not candidate_ids:
+    if len(candidate_ids) < 50:
         return JSONResponse(
-            {"error": "No standardized candidates available for batch"},
+            {"error": "At least 50 standardized candidates are required"},
             status_code=400,
         )
 
@@ -1386,6 +1508,12 @@ def create_test_run(role_id: str, payload: Dict[str, Any] = Body(...)):
             status_code=500,
         )
 
+    threading.Thread(
+        target=run_test_run,
+        args=(test_run_id, candidate_ids, criteria_data),
+        daemon=True,
+    ).start()
+
     return JSONResponse(
         {
             "test_run_id": test_run_id,
@@ -1393,6 +1521,107 @@ def create_test_run(role_id: str, payload: Dict[str, Any] = Body(...)):
             "batch_id": batch_id,
             "criteria_version_id": criteria_version_id,
             "candidate_count": len(candidate_ids),
+        }
+    )
+
+
+@app.post("/api/batches/{batch_id}/test-run")
+def start_batch_test_run(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    role_id = batch.get("role_id")
+    criteria = db.get_latest_role_criteria(role_id)
+    if not criteria:
+        return JSONResponse(
+            {"error": "No criteria configured for role"},
+            status_code=400,
+        )
+
+    try:
+        criteria_version_id = db.ensure_criteria_version(criteria)
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to prepare criteria version: {exc}"},
+            status_code=500,
+        )
+
+    candidate_ids = db.list_random_standardized_candidate_ids(batch_id, limit=50)
+    if len(candidate_ids) < 50:
+        return JSONResponse(
+            {"error": "At least 50 standardized candidates are required"},
+            status_code=400,
+        )
+
+    try:
+        test_run_id = db.create_test_run(
+            role_id, criteria_version_id, candidate_ids
+        )
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to create test run: {exc}"},
+            status_code=500,
+        )
+
+    threading.Thread(
+        target=run_test_run,
+        args=(test_run_id, candidate_ids, criteria),
+        daemon=True,
+    ).start()
+
+    return JSONResponse(
+        {
+            "test_run_id": test_run_id,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "criteria_version_id": criteria_version_id,
+            "criteria_version": criteria.get("version"),
+            "candidate_count": len(candidate_ids),
+        }
+    )
+
+
+@app.get("/api/test-runs/{test_run_id}")
+def get_test_run_status(test_run_id: str):
+    test_run = db.get_test_run(test_run_id)
+    if not test_run:
+        return JSONResponse({"error": "Test run not found"}, status_code=404)
+
+    criteria_version = db.get_criteria_version(test_run["criteria_version_id"])
+    criteria_data = criteria_version.get("criteria_data") if criteria_version else {}
+    criteria_columns = _criteria_columns(criteria_data)
+
+    results = db.list_test_run_results(test_run_id)
+    evaluated_count = len(results)
+    candidate_count = len(test_run.get("candidate_ids") or [])
+    status = "complete" if evaluated_count >= candidate_count else "running"
+
+    bucket_counts = {
+        "Proceed": 0,
+        "Human Review": 0,
+        "Dismiss": 0,
+        "Unable to Enrich": 0,
+    }
+    for result in results:
+        bucket = result.get("final_bucket")
+        if bucket in bucket_counts:
+            bucket_counts[bucket] += 1
+
+    return JSONResponse(
+        {
+            "test_run_id": test_run_id,
+            "role_id": test_run.get("role_id"),
+            "criteria_version_id": test_run.get("criteria_version_id"),
+            "criteria_version": criteria_version.get("version")
+            if criteria_version
+            else None,
+            "candidate_count": candidate_count,
+            "evaluated_count": evaluated_count,
+            "status": status,
+            "criteria_columns": criteria_columns,
+            "results": results,
+            "bucket_counts": bucket_counts,
         }
     )
 
@@ -1488,6 +1717,8 @@ def test_run_page(request: Request, role_id: str, batch_id: str):
         return HTMLResponse("Batch not found", status_code=404)
 
     metrics = db.get_batch_metrics(batch_id)
+    role_name = db.get_role_name(role_id)
+    criteria = db.get_latest_role_criteria(role_id)
 
     return templates.TemplateResponse(
         "test_run.html",
@@ -1495,10 +1726,12 @@ def test_run_page(request: Request, role_id: str, batch_id: str):
             "request": request,
             "role_id": role_id,
             "batch_id": batch_id,
+            "role_name": role_name,
             "batch_name": batch.get("name"),
             "batch_status": batch.get("status"),
             "file_count": metrics["file_count"],
             "final_count": metrics["final_count"],
+            "criteria": criteria,
             "stepper": build_stepper_context(
                 step_from_batch_status(batch.get("status")), role_id, batch_id
             ),

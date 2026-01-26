@@ -165,6 +165,11 @@ using `build_stepper_context(...)` so the active step reflects batch status.
 The review UI pulls `/api/batches/{batch_id}/candidates`, which returns `custom_fields`
 and includes custom field values alongside standardized fields for table rendering.
 
+### Test Runs
+Start test runs with `POST /api/batches/{batch_id}/test-run` and poll progress/results
+via `GET /api/test-runs/{test_run_id}`. Lock criteria after approval with
+`POST /api/roles/{role_id}/criteria/{criteria_id}/lock`.
+
 ### LLM Calls
 ```python
 # Always set API key from environment

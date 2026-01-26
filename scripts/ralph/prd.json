@@ -232,7 +232,7 @@
         "FAIL: Criteria not locked when approving"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "fileHints": ["webapp/main.py", "webapp/templates/test_run.html", "filtering/evaluator.py (CREATE)"]
     },
     {

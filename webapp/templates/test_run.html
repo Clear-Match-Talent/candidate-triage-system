@@ -8,7 +8,15 @@
   <link rel="stylesheet" href="/static/test_run.css" />
 </head>
 <body>
-  <div class="page" data-role-id="{{ role_id }}" data-batch-id="{{ batch_id }}">
+  <div
+    class="page"
+    data-role-id="{{ role_id }}"
+    data-batch-id="{{ batch_id }}"
+    data-role-name="{{ role_name or '' }}"
+    data-criteria-id="{{ criteria.id if criteria else '' }}"
+    data-criteria-version="{{ criteria.version if criteria else '' }}"
+    data-criteria-locked="{{ 1 if criteria and criteria.is_locked else 0 }}"
+  >
     <header class="page-header">
       <div>
         <p class="kicker">Candidate Standardization</p>
@@ -25,23 +33,37 @@
 
     <section class="summary">
       <div class="summary-main">
-        <span class="label">Batch name</span>
-        <strong>{{ batch_name or "Batch" }}</strong>
+        <span class="label">Role</span>
+        <strong>{{ role_name or "Role" }}</strong>
+        <span class="status">Batch: {{ batch_name or "Batch" }}</span>
         <span class="status">Status: {{ batch_status or "standardized" }}</span>
       </div>
       <div class="summary-metrics">
+        <div class="metric">
+          <span class="metric-label">Criteria version</span>
+          <strong>
+            {% if criteria %}
+              v{{ criteria.version }}
+            {% else %}
+              —
+            {% endif %}
+          </strong>
+        </div>
         <div class="metric">
           <span class="metric-label">Files</span>
           <strong>{{ file_count }}</strong>
         </div>
         <div class="metric">
           <span class="metric-label">Candidates</span>
-          <strong>{{ final_count }}</strong>
+          <strong id="candidate-count">{{ final_count }}</strong>
         </div>
       </div>
       <div class="summary-actions">
-        <button class="btn" id="start-test-run" type="button">Start Test Run</button>
+        <button class="btn" id="start-test-run" type="button">
+          Run Test (50 candidates)
+        </button>
         <div class="message" id="test-run-message" role="status"></div>
+        <div class="progress" id="test-run-progress" role="status"></div>
       </div>
     </section>
 
@@ -51,6 +73,49 @@
         Starting a test run will randomly sample up to 50 standardized candidates
         from this batch and prepare them for AI filtering evaluation.
       </p>
+    </section>
+
+    <section class="results-card" id="test-run-results">
+      <div class="results-header">
+        <h2>Test Run Results</h2>
+        <div class="results-actions">
+          <button class="btn secondary" id="refine-criteria" type="button">
+            Refine Criteria
+          </button>
+          <button class="btn success" id="approve-criteria" type="button">
+            Approve Criteria &amp; Run Full
+          </button>
+        </div>
+      </div>
+
+      <div class="summary-bar" id="summary-bar">
+        <div class="summary-pill proceed">
+          <span>Proceed</span>
+          <strong id="summary-proceed">0</strong>
+        </div>
+        <div class="summary-pill review">
+          <span>Human Review</span>
+          <strong id="summary-review">0</strong>
+        </div>
+        <div class="summary-pill dismiss">
+          <span>Dismiss</span>
+          <strong id="summary-dismiss">0</strong>
+        </div>
+        <div class="summary-pill unable">
+          <span>Unable to Enrich</span>
+          <strong id="summary-unable">0</strong>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="results-table" id="results-table">
+          <thead id="results-head"></thead>
+          <tbody id="results-body"></tbody>
+        </table>
+        <div class="empty-state" id="results-empty">
+          No evaluations yet. Start a test run to see results.
+        </div>
+      </div>
     </section>
   </div>
 

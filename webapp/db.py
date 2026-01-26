@@ -433,6 +433,47 @@ def create_role_criteria(
     }
 
 
+def get_role_criteria(criteria_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a role criteria record by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM role_criteria WHERE id = ?", (criteria_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return _parse_role_criteria_row(row)
+    finally:
+        conn.close()
+
+
+def lock_role_criteria(criteria_id: str) -> Optional[Dict[str, Any]]:
+    """Lock a criteria version and return the updated record."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE role_criteria
+            SET is_locked = 1
+            WHERE id = ?
+            """,
+            (criteria_id,),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM role_criteria WHERE id = ?", (criteria_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return _parse_role_criteria_row(row)
+    except Exception:
+        logger.exception("Failed to lock role criteria id=%s", criteria_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def list_batch_file_uploads(batch_id: str) -> List[Dict[str, Any]]:
     """List uploaded files for a batch with parsed headers."""
     conn = get_data_connection()
@@ -596,6 +637,59 @@ def list_raw_candidates(
     return candidates
 
 
+def list_candidates_by_ids(candidate_ids: List[str]) -> List[Dict[str, Any]]:
+    """Fetch candidates by ID with parsed standardized data."""
+    if not candidate_ids:
+        return []
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    placeholders = ",".join("?" for _ in candidate_ids)
+    try:
+        cursor.execute(
+            f"""
+            SELECT
+                id,
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                location,
+                current_company,
+                current_title,
+                standardized_data
+            FROM raw_candidates
+            WHERE id IN ({placeholders})
+            """,
+            tuple(candidate_ids),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        standardized_data = None
+        if row["standardized_data"]:
+            try:
+                standardized_data = json.loads(row["standardized_data"])
+            except json.JSONDecodeError:
+                standardized_data = None
+        candidates.append(
+            {
+                "id": row["id"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "full_name": row["full_name"],
+                "linkedin_url": row["linkedin_url"],
+                "location": row["location"],
+                "current_company": row["current_company"],
+                "current_title": row["current_title"],
+                "standardized_data": standardized_data,
+            }
+        )
+    return candidates
+
+
 def get_batch_metrics(batch_id: str) -> Dict[str, int]:
     """Return aggregate metrics for a batch."""
     conn = get_data_connection()
@@ -708,6 +802,78 @@ def get_latest_criteria_version(role_id: str) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
+def get_criteria_version(criteria_version_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a criteria version by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, role_id, version, criteria_data, created_at
+            FROM criteria_versions
+            WHERE id = ?
+            """,
+            (criteria_version_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        criteria_data = {}
+        if data.get("criteria_data"):
+            try:
+                criteria_data = json.loads(data["criteria_data"])
+            except json.JSONDecodeError:
+                criteria_data = {}
+        data["criteria_data"] = criteria_data
+        return data
+    finally:
+        conn.close()
+
+
+def ensure_criteria_version(criteria: Dict[str, Any]) -> str:
+    """Ensure criteria_versions row exists for a role_criteria record."""
+    criteria_id = criteria.get("id")
+    if not criteria_id:
+        raise ValueError("criteria id is required")
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id FROM criteria_versions WHERE id = ?",
+            (criteria_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            return row["id"]
+        criteria_payload = {
+            "must_haves": criteria.get("must_haves") or [],
+            "gating_params": criteria.get("gating_params") or {},
+            "nice_to_haves": criteria.get("nice_to_haves") or [],
+            "is_locked": bool(criteria.get("is_locked")),
+        }
+        cursor.execute(
+            """
+            INSERT INTO criteria_versions (id, role_id, version, criteria_data)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                criteria_id,
+                criteria.get("role_id"),
+                criteria.get("version"),
+                json.dumps(criteria_payload),
+            ),
+        )
+        conn.commit()
+        return criteria_id
+    except Exception:
+        logger.exception("Failed to ensure criteria version id=%s", criteria_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def list_random_standardized_candidate_ids(
     batch_id: str, limit: int = 50
 ) -> List[str]:
@@ -754,6 +920,140 @@ def create_test_run(
     finally:
         conn.close()
     return test_run_id
+
+
+def get_test_run(test_run_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a test run record by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM test_runs WHERE id = ?", (test_run_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        candidate_ids = []
+        if data.get("candidate_ids"):
+            try:
+                candidate_ids = json.loads(data["candidate_ids"])
+            except json.JSONDecodeError:
+                candidate_ids = []
+        data["candidate_ids"] = candidate_ids
+        return data
+    finally:
+        conn.close()
+
+
+def count_test_run_results(test_run_id: str) -> int:
+    """Return count of results stored for a test run."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT COUNT(*) AS total FROM test_run_results WHERE test_run_id = ?",
+            (test_run_id,),
+        )
+        row = cursor.fetchone()
+        return int(row["total"] or 0)
+    finally:
+        conn.close()
+
+
+def list_test_run_results(test_run_id: str) -> List[Dict[str, Any]]:
+    """List test run results with parsed evaluations."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                id,
+                candidate_id,
+                candidate_name,
+                candidate_linkedin,
+                criteria_evaluations,
+                final_bucket,
+                created_at
+            FROM test_run_results
+            WHERE test_run_id = ?
+            ORDER BY created_at ASC
+            """,
+            (test_run_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    results: List[Dict[str, Any]] = []
+    for row in rows:
+        evaluations = {}
+        if row["criteria_evaluations"]:
+            try:
+                evaluations = json.loads(row["criteria_evaluations"])
+            except json.JSONDecodeError:
+                evaluations = {}
+        results.append(
+            {
+                "id": row["id"],
+                "candidate_id": row["candidate_id"],
+                "candidate_name": row["candidate_name"],
+                "candidate_linkedin": row["candidate_linkedin"],
+                "criteria_evaluations": evaluations,
+                "final_bucket": row["final_bucket"],
+                "created_at": row["created_at"],
+            }
+        )
+    return results
+
+
+def insert_test_run_result(
+    test_run_id: str,
+    candidate_id: str,
+    candidate_name: str,
+    candidate_linkedin: Optional[str],
+    criteria_evaluations: Dict[str, Any],
+    final_bucket: str,
+) -> str:
+    """Insert a single test run result row."""
+    result_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO test_run_results (
+                id,
+                test_run_id,
+                candidate_id,
+                candidate_name,
+                candidate_linkedin,
+                criteria_evaluations,
+                final_bucket
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                result_id,
+                test_run_id,
+                candidate_id,
+                candidate_name,
+                candidate_linkedin,
+                json.dumps(criteria_evaluations),
+                final_bucket,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception(
+            "Failed to insert test run result test_run_id=%s candidate_id=%s",
+            test_run_id,
+            candidate_id,
+        )
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return result_id
 
 
 def insert_raw_candidates(
