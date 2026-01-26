@@ -80,7 +80,7 @@
         "FAIL: Custom fields not saved"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "fileHints": ["webapp/main.py lines 637-720", "webapp/db.py"]
     },
     {

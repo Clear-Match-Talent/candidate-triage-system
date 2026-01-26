@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -61,6 +62,7 @@ STANDARDIZED_FIELDS = [
     "current_company",
     "current_title",
 ]
+logger = logging.getLogger(__name__)
 STEPPER_STEPS = [
     {"key": "upload", "label": "Upload"},
     {"key": "map", "label": "Map Fields"},
@@ -227,6 +229,69 @@ def normalize_value(value: Optional[str]) -> Optional[str]:
     return str(value)
 
 
+def normalize_linkedin_url(value: Optional[str]) -> Optional[str]:
+    cleaned = normalize_value(value)
+    if not cleaned:
+        return None
+    lower = cleaned.lower().strip()
+    lower = lower.replace("http://", "https://")
+    lower = lower.replace("https://www.", "https://")
+
+    if "linkedin.com" in lower:
+        match = re.search(r"linkedin\.com/(in|pub)/([^/?#]+)", lower)
+        if match:
+            username = match.group(2)
+        else:
+            path = lower.split("linkedin.com", 1)[-1].strip("/")
+            username = path.split("/")[-1] if path else ""
+        username = username.split("?")[0].split("#")[0].strip("/")
+        if not username:
+            return None
+        return f"https://linkedin.com/in/{username}"
+
+    if lower.startswith("in/"):
+        username = lower.split("in/", 1)[-1].strip("/")
+        if not username:
+            return None
+        return f"https://linkedin.com/in/{username}"
+
+    username = re.sub(r"[^a-z0-9_-]+", "", lower)
+    if not username:
+        return None
+    return f"https://linkedin.com/in/{username}"
+
+
+def extract_json_object(text: str) -> Dict[str, Any]:
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError("No JSON object found in AI response")
+    payload = json.loads(match.group(0))
+    if not isinstance(payload, dict):
+        raise ValueError("AI response is not a JSON object")
+    return payload
+
+
+def split_full_name_with_ai(full_name: str) -> Tuple[str, str]:
+    prompt = (
+        "Split this person's full name into first_name and last_name.\n"
+        "Return ONLY JSON with keys first_name and last_name.\n"
+        "If there is only one name, put it in first_name and leave last_name empty.\n"
+        f"Name: {full_name}"
+    )
+    response = anthropic_client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=150,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text_response = next(
+        (block.text for block in response.content if hasattr(block, "text")), ""
+    )
+    payload = extract_json_object(text_response)
+    first_name = normalize_value(payload.get("first_name")) or ""
+    last_name = normalize_value(payload.get("last_name")) or ""
+    return first_name, last_name
+
+
 def apply_mappings_to_row(
     row: Dict[str, Optional[str]],
     mappings: Dict[str, str],
@@ -241,18 +306,6 @@ def apply_mappings_to_row(
             continue
         if not standardized.get(target):
             standardized[target] = value
-    # Smart name splitting if full_name is provided but not first/last
-    full_name = normalize_value(standardized.get("full_name"))
-    if full_name and not standardized.get("first_name") and not standardized.get("last_name"):
-        parts = full_name.split()
-        if len(parts) == 1:
-            # Single name (e.g., "Madonna") -> first_name only
-            standardized["first_name"] = parts[0]
-            standardized["last_name"] = ""
-        elif len(parts) > 1:
-            # Multiple parts: first word = first_name, rest = last_name
-            standardized["first_name"] = parts[0]
-            standardized["last_name"] = " ".join(parts[1:])
     return standardized
 
 
@@ -285,19 +338,30 @@ def suggest_mappings_for_headers(headers: List[str]) -> Dict[str, str]:
     return extract_json_mapping(text_response)
 
 
-def validate_mapping_payload(files_payload: List[Dict[str, Any]]) -> Tuple[bool, str]:
+def validate_mapping_payload(
+    mappings: Dict[str, Dict[str, str]],
+    custom_fields: List[str],
+) -> Tuple[bool, str]:
+    if not isinstance(mappings, dict):
+        return False, "Invalid mappings payload"
+
+    allowed_fields = set(STANDARDIZED_FIELDS) | set(custom_fields or [])
     has_linkedin = False
-    for file_payload in files_payload:
-        mappings = file_payload.get("mappings", {})
-        if not isinstance(mappings, dict):
+
+    for target_field, file_mappings in mappings.items():
+        if target_field not in allowed_fields:
+            return False, "Invalid target field in mappings"
+        if target_field == "linkedin_url":
+            has_linkedin = True
+        if not isinstance(file_mappings, dict):
             return False, "Invalid mappings payload"
-        for target in mappings.values():
-            if target == "linkedin_url":
-                has_linkedin = True
-            if target != "skip" and target not in STANDARDIZED_FIELDS:
-                return False, "Invalid target field in mappings"
-    if not has_linkedin:
+        for source_column in file_mappings.values():
+            if not isinstance(source_column, str):
+                return False, "Invalid mappings payload"
+
+    if not has_linkedin or not any((mappings.get("linkedin_url") or {}).values()):
         return False, "linkedin_url mapping is required"
+
     return True, ""
 
 
@@ -619,10 +683,9 @@ def apply_batch_mappings(
     if not mappings:
         return JSONResponse({"error": "No mappings provided"}, status_code=400)
 
-    # Validate linkedin_url is mapped
-    linkedin_mappings = mappings.get("linkedin_url", {})
-    if not linkedin_mappings or not any(linkedin_mappings.values()):
-        return JSONResponse({"error": "linkedin_url mapping is required"}, status_code=400)
+    is_valid, error_message = validate_mapping_payload(mappings, custom_fields)
+    if not is_valid:
+        return JSONResponse({"error": error_message}, status_code=400)
 
     uploads = db.list_batch_file_uploads(batch_id)
     if not uploads:
@@ -643,6 +706,14 @@ def apply_batch_mappings(
     candidates_payload: List[Dict[str, Any]] = []
     deduplicated_count = 0
     final_count = 0
+    name_split_cache: Dict[str, Tuple[str, str]] = {}
+
+    logger.info(
+        "Applying mappings for batch %s with %d files and %d custom fields",
+        batch_id,
+        len(uploads),
+        len(custom_fields),
+    )
 
     for upload in uploads:
         filename = upload.get("filename")
@@ -656,10 +727,43 @@ def apply_batch_mappings(
             )
         df = read_csv_with_fallback(file_path)
         file_mappings = mappings_by_filename.get(filename, {})
+        logger.info(
+            "Processing %s with %d rows and %d mapped columns",
+            filename,
+            len(df.index),
+            len(file_mappings),
+        )
 
         for _, row in df.iterrows():
             raw_row = row.to_dict()
             standardized_data = apply_mappings_to_row(raw_row, file_mappings)
+
+            full_name = normalize_value(standardized_data.get("full_name"))
+            if full_name and not standardized_data.get("first_name") and not standardized_data.get(
+                "last_name"
+            ):
+                cached = name_split_cache.get(full_name)
+                if cached:
+                    first_name, last_name = cached
+                else:
+                    parts = full_name.split()
+                    if len(parts) == 1:
+                        first_name, last_name = parts[0], ""
+                    elif len(parts) == 2:
+                        first_name, last_name = parts[0], parts[1]
+                    else:
+                        try:
+                            first_name, last_name = split_full_name_with_ai(full_name)
+                        except Exception as exc:
+                            logger.warning(
+                                "AI name split failed for '%s': %s",
+                                full_name,
+                                exc,
+                            )
+                            first_name, last_name = parts[0], " ".join(parts[1:])
+                    name_split_cache[full_name] = (first_name, last_name)
+                standardized_data["first_name"] = first_name
+                standardized_data["last_name"] = last_name
 
             # Handle custom fields
             for custom_field in custom_fields:
@@ -671,7 +775,8 @@ def apply_batch_mappings(
                             if value:
                                 standardized_data[custom_field] = value
 
-            linkedin_url = normalize_value(standardized_data.get("linkedin_url"))
+            linkedin_url = normalize_linkedin_url(standardized_data.get("linkedin_url"))
+            standardized_data["linkedin_url"] = linkedin_url
             normalized_key = linkedin_url.lower() if linkedin_url else ""
             status = "standardized"
             if normalized_key:
@@ -707,12 +812,20 @@ def apply_batch_mappings(
             status_code=500,
         )
 
+    logger.info(
+        "Applied mappings for batch %s: total=%d standardized=%d duplicates=%d",
+        batch_id,
+        total_uploaded,
+        final_count,
+        deduplicated_count,
+    )
+
     return JSONResponse(
         {
-            "batch_id": batch_id,
-            "total_uploaded": total_uploaded,
-            "deduplicated_count": deduplicated_count,
-            "final_count": final_count,
+            "success": True,
+            "total": total_uploaded,
+            "standardized": final_count,
+            "duplicates": deduplicated_count,
         }
     )
 

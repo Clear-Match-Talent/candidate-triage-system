@@ -1,6 +1,9 @@
 # Ralph Progress Log
 Started: Mon Jan 26 09:29:51 UTC 2026
 ---
+## Codebase Patterns
+- Normalize LinkedIn URLs with `normalize_linkedin_url()` before dedupe and storage.
+---
 ## 2026-01-26 09:37:48 UTC - FIX-001
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Implemented grid-based field mapping interactions with strict high-confidence prefill rules and custom field support
@@ -52,4 +55,14 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Name splitting handles edge cases: single names, middle names, empty last names
   - Mobile requires disabling sticky positioning to prevent layout issues
 
+---
+## 2026-01-26 09:42:35 UTC - FIX-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Updated apply-mappings backend to validate grid payload, normalize LinkedIn URLs, split names with AI fallback, and return standardized/duplicate counts
+- Added detailed logging around mapping application and file processing
+- Files changed: webapp/main.py, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Patterns discovered: Use `normalize_linkedin_url()` before dedupe so stored LinkedIn URLs are consistent
+  - Gotchas encountered: `pytest` is not installed in the environment (use `python3`, not `python`)
+  - Useful context: Name splitting uses AI for 3+ part names with cached results; falls back to heuristic on failure
 ---
