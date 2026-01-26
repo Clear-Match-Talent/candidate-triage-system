@@ -676,6 +676,8 @@ def list_batch_candidates(batch_id: str, view: str = "standardized"):
     return JSONResponse(
         {
             "batch_id": batch_id,
+            "batch_name": batch.get("name"),
+            "batch_status": batch.get("status"),
             "view": normalized_view,
             "candidates": candidates_payload,
             "total_uploaded": metrics["total_uploaded"],
@@ -706,6 +708,18 @@ def run_detail(request: Request, run_id: str):
 def map_fields_page(request: Request, role_id: str, batch_id: str):
     return templates.TemplateResponse(
         "map.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+        },
+    )
+
+
+@app.get("/roles/{role_id}/batches/{batch_id}/review", response_class=HTMLResponse)
+def review_batch_page(request: Request, role_id: str, batch_id: str):
+    return templates.TemplateResponse(
+        "review.html",
         {
             "request": request,
             "role_id": role_id,

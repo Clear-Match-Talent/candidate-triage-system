@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Review Batch - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/review.css" />
+</head>
+<body>
+  <div class="page" data-role-id="{{ role_id }}" data-batch-id="{{ batch_id }}">
+    <header class="page-header">
+      <div>
+        <p class="kicker">Candidate Standardization</p>
+        <h1>Review Standardized Data</h1>
+        <p class="subtitle">Inspect raw and standardized records before approving the batch.</p>
+      </div>
+      <div class="batch-chip">
+        <span>Batch</span>
+        <strong>{{ batch_id }}</strong>
+      </div>
+    </header>
+
+    <nav class="stepper">
+      <div class="step">Upload</div>
+      <div class="step">Map Fields</div>
+      <div class="step">Standardize</div>
+      <div class="step active">Review</div>
+      <div class="step">Approve</div>
+      <div class="step">Test Run</div>
+      <div class="step">Filter</div>
+      <div class="step">Results</div>
+    </nav>
+
+    <section class="summary">
+      <div class="summary-main">
+        <label for="batch-name">Batch name</label>
+        <input id="batch-name" type="text" placeholder="Batch" />
+      </div>
+      <div class="summary-metrics">
+        <div class="metric">
+          <span class="metric-label">Files</span>
+          <strong id="metric-files">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Total uploaded</span>
+          <strong id="metric-uploaded">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Deduplicated</span>
+          <strong id="metric-deduped">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Final count</span>
+          <strong id="metric-final">0</strong>
+        </div>
+      </div>
+      <div class="summary-actions">
+        <a class="btn ghost" id="export-btn" href="#" target="_blank">Export CSV</a>
+        <button class="btn" id="approve-btn" type="button">Approve Batch</button>
+      </div>
+    </section>
+
+    <section class="tabs">
+      <button class="tab active" data-view="standardized" type="button">Standardized Data</button>
+      <button class="tab" data-view="raw" type="button">Raw Data</button>
+      <button class="tab" data-view="comparison" type="button">Comparison</button>
+    </section>
+
+    <main class="panel">
+      <div id="table-container" class="table-container">
+        <div class="empty-state">Loading candidates...</div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/review.js"></script>
+</body>
+</html>

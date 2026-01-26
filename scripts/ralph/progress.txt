@@ -76,3 +76,15 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context (e.g., "the evaluation panel is in component X")
     - Review API pulls batch metrics from `batch_file_uploads` and `raw_candidates` and excludes duplicates.
 ---
+## 2026-01-26 07:45:39 UTC - US-005B
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added review page template, styles, and client-side tabbed table rendering for raw/standardized/comparison views with batch metrics and action buttons. Added review route and included batch metadata in candidates API response.
+- Files changed: `webapp/main.py`, `webapp/templates/review.html`, `webapp/static/review.css`, `webapp/static/review.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Review UI consumes `/api/batches/:batch_id/candidates` for both table data and summary metrics.
+---
