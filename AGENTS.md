@@ -265,6 +265,7 @@ This file contains:
 - Read this document FIRST
 - Implement exactly as specified
 - Do not deviate from documented structure without updating the spec
+- Apply schema changes with `python3 database/migrate.py --sql database/schema.sql` (targets `data.db`).
 
 ---
 

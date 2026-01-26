@@ -1,0 +1,17 @@
+# Ralph Progress Log
+Started: Mon Jan 26 07:24:00 UTC 2026
+---
+## Codebase Patterns
+- Database schema lives in `database/schema.sql` and is applied via `python3 database/migrate.py --sql <file>`.
+## 2026-01-26 07:26:53 UTC - US-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added candidate batch tables and indexes to the SQLite schema and added a migration script to apply schema SQL.
+- Files changed: `database/schema.sql`, `database/migrate.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - Schema updates are applied to `data.db` with `python3 database/migrate.py --sql database/schema.sql`.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Candidate batch tables live alongside core AI filtering tables in `database/schema.sql`.
+---
