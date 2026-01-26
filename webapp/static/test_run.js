@@ -22,6 +22,11 @@ const resultsEmpty = document.getElementById('results-empty');
 const tableWrapper = resultsTable?.closest('.table-wrapper');
 
 let pollingTimer = null;
+const showToast = (message, type = 'success') => {
+  if (window.showToast) {
+    window.showToast(message, type);
+  }
+};
 
 const setMessage = (text, isError = false) => {
   if (!message) {
@@ -202,9 +207,10 @@ const pollTestRun = async (testRunId) => {
     updateFromPayload(payload);
     if (payload.status === 'complete') {
       setProgress('Evaluation complete.');
-    if (approveButton && !criteriaLocked) {
-      approveButton.disabled = false;
-    }
+      showToast('Test run complete.', 'success');
+      if (approveButton && !criteriaLocked) {
+        approveButton.disabled = false;
+      }
       startButton && (startButton.disabled = true);
       pollingTimer = null;
       return;
@@ -214,6 +220,7 @@ const pollTestRun = async (testRunId) => {
     );
   } catch (error) {
     setMessage(error.message || 'Unable to load test run.', true);
+    showToast(error.message || 'Unable to load test run.', 'error');
   }
   pollingTimer = window.setTimeout(() => pollTestRun(testRunId), 2500);
 };
@@ -242,7 +249,9 @@ if (startButton && roleId && batchId) {
 
   startButton.addEventListener('click', async () => {
     startButton.disabled = true;
+    startButton.classList.add('loading');
     setMessage('Starting test run...');
+    message?.classList.add('loading');
     setProgress('');
     try {
       const response = await fetch(`/api/batches/${batchId}/test-run`, {
@@ -253,11 +262,17 @@ if (startButton && roleId && batchId) {
         throw new Error(payload.error || 'Failed to start test run.');
       }
       setMessage(`Test run started with ${payload.candidate_count} candidates.`);
+      startButton.classList.remove('loading');
+      message?.classList.remove('loading');
+      showToast('Test run started.', 'success');
       setQueryParam(payload.test_run_id);
       startPolling(payload.test_run_id);
     } catch (error) {
       setMessage(error.message || 'Unable to start test run.', true);
+      showToast(error.message || 'Unable to start test run.', 'error');
       startButton.disabled = false;
+      startButton.classList.remove('loading');
+      message?.classList.remove('loading');
     }
   });
 }
@@ -279,6 +294,7 @@ if (approveButton && roleId && batchId) {
     }
     approveButton.disabled = true;
     setMessage('Locking criteria...');
+    message?.classList.add('loading');
     try {
       const response = await fetch(
         `/api/roles/${roleId}/criteria/${criteriaId}/lock`,
@@ -289,10 +305,13 @@ if (approveButton && roleId && batchId) {
         throw new Error(payload.error || 'Failed to lock criteria.');
       }
       setMessage('Criteria approved. Redirecting to full run...');
+      showToast('Criteria approved.', 'success');
       window.location.href = `/roles/${roleId}/batches/${batchId}/run`;
     } catch (error) {
       setMessage(error.message || 'Unable to lock criteria.', true);
+      showToast(error.message || 'Unable to lock criteria.', 'error');
       approveButton.disabled = false;
+      message?.classList.remove('loading');
     }
   });
 }

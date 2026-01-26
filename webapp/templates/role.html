@@ -4,194 +4,172 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>{{ role.name }} - Candidate Triage System</title>
-  <style>
-    body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
-    h1 { margin: 0 0 8px; }
-    .card { border: 1px solid #ddd; border-radius: 10px; padding: 16px; max-width: 860px; margin-bottom: 24px; }
-    label { display:block; font-weight: 600; margin-top: 12px; }
-    input[type=text], input[type=file] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
-    input[type=file] { padding: 6px; }
-    textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-family: inherit; }
-    button { margin-top: 14px; padding: 10px 14px; border-radius: 8px; border: 1px solid #111; background: #111; color: #fff; font-weight: 600; cursor: pointer; }
-    .hint { color: #555; font-size: 13px; margin-top: 6px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-    th, td { border-bottom: 1px solid #eee; padding: 10px 8px; font-size: 14px; text-align: left; }
-    .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #ddd; }
-    .uploaded { background: #fafafa; }
-    .mapped { background: #fff8e1; }
-    .standardized { background: #e3f2fd; }
-    .approved { background: #e8f5e9; }
-    a { color: #0b57d0; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .nav { margin-bottom: 16px; }
-    .nav a { margin-right: 16px; }
-    .doc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 12px; }
-    .doc-slot { border: 1px dashed #ccc; border-radius: 10px; padding: 12px; }
-    .doc-title { font-weight: 600; margin: 0 0 8px; }
-    .doc-status { font-size: 13px; color: #444; margin-bottom: 10px; }
-    .doc-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-    .doc-actions button { margin-top: 0; }
-    .doc-url { margin-top: 8px; }
-    .doc-message { font-size: 12px; color: #a00; margin-top: 6px; min-height: 16px; }
-    .criteria-section { margin-top: 8px; }
-    .criteria-group { margin-top: 12px; }
-    .criteria-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
-    .criteria-checkbox { display: flex; align-items: center; gap: 8px; font-weight: 500; }
-    .criteria-message { font-size: 13px; margin-top: 8px; min-height: 18px; }
-    .criteria-locked { font-size: 13px; color: #a00; margin-top: 8px; }
-    .criteria-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
-    .criteria-spinner { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #444; }
-    .spinner { width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #111; border-radius: 50%; animation: spin 0.8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
+  <link rel="stylesheet" href="/static/design-system.css" />
+  <link rel="stylesheet" href="/static/role.css" />
 </head>
 <body>
-  <div class="nav">
-    <a href="/">← Home</a>
-    <a href="/roles">Roles</a>
-  </div>
+  <div class="page">
+    <nav class="breadcrumbs">
+      <ol>
+        <li><a href="/">Home</a></li>
+        <li><a href="/roles">Roles</a></li>
+        <li><strong>{{ role.name }}</strong></li>
+      </ol>
+    </nav>
 
-  <h1>{{ role.name }}</h1>
-  {% if role.description %}
-  <p class="hint">{{ role.description }}</p>
-  {% endif %}
+    <h1>{{ role.name }}</h1>
+    {% if role.description %}
+    <p class="subtitle">{{ role.description }}</p>
+    {% endif %}
 
-  <div class="card" id="role-documents">
-    <h2 style="margin-top:0;">Role Documents</h2>
-    <div class="doc-grid">
-      <div class="doc-slot" data-doc-type="jd">
-        <p class="doc-title">Job Description</p>
-        <div class="doc-status" id="doc-status-jd">Not uploaded</div>
-        <input type="file" id="file-jd" accept=".pdf,.docx,.txt" />
-        <div class="doc-actions">
-          <button type="button" class="doc-upload" data-doc-type="jd">Upload</button>
-          <button type="button" class="doc-delete" data-doc-type="jd" style="display:none;">Delete</button>
+    <div class="card" id="role-documents">
+      <h2 style="margin-top:0;">Role Documents</h2>
+      <div class="doc-grid">
+        <div class="doc-slot" data-doc-type="jd">
+          <p class="doc-title">Job Description</p>
+          <div class="doc-status" id="doc-status-jd">Not uploaded</div>
+          <input type="file" id="file-jd" accept=".pdf,.docx,.txt" />
+          <div class="doc-actions">
+            <button type="button" class="btn doc-upload" data-doc-type="jd">Upload</button>
+            <button type="button" class="btn danger doc-delete" data-doc-type="jd" style="display:none;">Delete</button>
+          </div>
+          <div class="doc-message" id="doc-message-jd"></div>
         </div>
-        <div class="doc-message" id="doc-message-jd"></div>
-      </div>
 
-      <div class="doc-slot" data-doc-type="intake">
-        <p class="doc-title">Intake Form</p>
-        <div class="doc-status" id="doc-status-intake">Not uploaded</div>
-        <input type="file" id="file-intake" accept=".pdf,.docx,.txt" />
-        <input type="text" class="doc-url" id="url-intake" placeholder="Google Doc URL (optional)" />
-        <div class="doc-actions">
-          <button type="button" class="doc-upload" data-doc-type="intake">Upload</button>
-          <button type="button" class="doc-delete" data-doc-type="intake" style="display:none;">Delete</button>
+        <div class="doc-slot" data-doc-type="intake">
+          <p class="doc-title">Intake Form</p>
+          <div class="doc-status" id="doc-status-intake">Not uploaded</div>
+          <input type="file" id="file-intake" accept=".pdf,.docx,.txt" />
+          <input type="text" class="doc-url" id="url-intake" placeholder="Google Doc URL (optional)" />
+          <div class="doc-actions">
+            <button type="button" class="btn doc-upload" data-doc-type="intake">Upload</button>
+            <button type="button" class="btn danger doc-delete" data-doc-type="intake" style="display:none;">Delete</button>
+          </div>
+          <div class="doc-message" id="doc-message-intake"></div>
         </div>
-        <div class="doc-message" id="doc-message-intake"></div>
-      </div>
 
-      <div class="doc-slot" data-doc-type="calibration">
-        <p class="doc-title">Calibration Candidates</p>
-        <div class="doc-status" id="doc-status-calibration">Not uploaded</div>
-        <input type="file" id="file-calibration" accept=".csv" />
-        <div class="doc-actions">
-          <button type="button" class="doc-upload" data-doc-type="calibration">Upload</button>
-          <button type="button" class="doc-delete" data-doc-type="calibration" style="display:none;">Delete</button>
+        <div class="doc-slot" data-doc-type="calibration">
+          <p class="doc-title">Calibration Candidates</p>
+          <div class="doc-status" id="doc-status-calibration">Not uploaded</div>
+          <input type="file" id="file-calibration" accept=".csv" />
+          <div class="doc-actions">
+            <button type="button" class="btn doc-upload" data-doc-type="calibration">Upload</button>
+            <button type="button" class="btn danger doc-delete" data-doc-type="calibration" style="display:none;">Delete</button>
+          </div>
+          <div class="doc-message" id="doc-message-calibration"></div>
         </div>
-        <div class="doc-message" id="doc-message-calibration"></div>
       </div>
     </div>
-  </div>
 
-  <div class="card" id="role-criteria">
-    <h2 style="margin-top:0;">Filtering Criteria <span id="criteria-version"></span></h2>
-    <div class="criteria-locked" id="criteria-locked-message" style="display:none;">
-      Criteria locked after approved test run
-    </div>
-    <div class="criteria-section">
-      <div class="criteria-group">
-        <label for="must-haves">Must-Have Requirements</label>
-        <textarea id="must-haves" rows="5" placeholder="One requirement per line"></textarea>
+    <div class="card" id="role-criteria">
+      <h2 style="margin-top:0;">Filtering Criteria <span id="criteria-version"></span></h2>
+      <div class="criteria-locked" id="criteria-locked-message" style="display:none;">
+        Criteria locked after approved test run
       </div>
-
-      <div class="criteria-group">
-        <label>Gating Parameters</label>
-        <div class="criteria-row">
-          <label class="criteria-checkbox">
-            <input type="checkbox" id="gate-job-hopper" />
-            Job hopper (&gt;3 jobs in 5 years)
-          </label>
-          <label class="criteria-checkbox">
-            <input type="checkbox" id="gate-bootcamp-only" />
-            Bootcamp-only education (no degree)
-          </label>
-          <label class="criteria-checkbox">
-            <input type="checkbox" id="gate-location-mismatch" />
-            Location mismatch
-          </label>
+      <div class="criteria-section">
+        <div class="criteria-group">
+          <label for="must-haves">Must-Have Requirements</label>
+          <textarea id="must-haves" rows="5" placeholder="One requirement per line"></textarea>
         </div>
-        <input
-          type="text"
-          id="gate-custom-rule"
-          placeholder="Custom rule (optional)"
-          style="margin-top: 8px;"
-        />
-      </div>
 
-      <div class="criteria-group">
-        <label for="nice-to-haves">Nice-to-Haves</label>
-        <textarea id="nice-to-haves" rows="4" placeholder="One per line"></textarea>
-      </div>
-
-      <div class="criteria-actions">
-        <button type="button" id="analyze-documents">Analyze Documents</button>
-        <div class="criteria-spinner" id="criteria-spinner" style="display:none;">
-          <span class="spinner"></span>
-          Analyzing...
+        <div class="criteria-group">
+          <label>Gating Parameters</label>
+          <div class="criteria-row">
+            <label class="criteria-checkbox">
+              <input type="checkbox" id="gate-job-hopper" />
+              Job hopper (&gt;3 jobs in 5 years)
+            </label>
+            <label class="criteria-checkbox">
+              <input type="checkbox" id="gate-bootcamp-only" />
+              Bootcamp-only education (no degree)
+            </label>
+            <label class="criteria-checkbox">
+              <input type="checkbox" id="gate-location-mismatch" />
+              Location mismatch
+            </label>
+          </div>
+          <input
+            type="text"
+            id="gate-custom-rule"
+            placeholder="Custom rule (optional)"
+            style="margin-top: 8px;"
+          />
         </div>
+
+        <div class="criteria-group">
+          <label for="nice-to-haves">Nice-to-Haves</label>
+          <textarea id="nice-to-haves" rows="4" placeholder="One per line"></textarea>
+        </div>
+
+        <div class="criteria-actions">
+          <button type="button" class="btn" id="analyze-documents">Analyze Documents</button>
+          <div class="criteria-spinner" id="criteria-spinner" style="display:none;">
+            <span class="spinner"></span>
+            Analyzing...
+          </div>
+        </div>
+        <button type="button" class="btn" id="save-criteria">Save Criteria</button>
+        <div class="criteria-message" id="criteria-message"></div>
       </div>
-      <button type="button" id="save-criteria">Save Criteria</button>
-      <div class="criteria-message" id="criteria-message"></div>
     </div>
+
+    <div class="card" id="upload-batch">
+      <h2 style="margin-top:0;">Upload Candidate Batch</h2>
+      <form id="uploadForm" enctype="multipart/form-data">
+        <label>Batch Name *</label>
+        <input type="text" name="batch_name" id="batchName" placeholder="e.g., LinkedIn_Jan2026" required />
+
+        <label>CSV Files *</label>
+        <input type="file" name="files" id="files" multiple accept=".csv" required />
+        <div class="hint">Upload one or more CSV files to standardize and process.</div>
+
+        <button type="submit" class="btn">Upload Batch</button>
+      </form>
+    </div>
+
+    <h2>Batches for this Role</h2>
+    {% if batches %}
+    <table>
+      <thead>
+        <tr><th>Batch Name</th><th>Status</th><th>Created</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for batch in batches %}
+        <tr>
+          <td><strong>{{ batch.name }}</strong></td>
+          <td><span class="pill {{ batch.status }}">{{ batch.status }}</span></td>
+          <td>{{ batch.created_at }}</td>
+          <td>
+            {% if batch.status == 'uploaded' %}
+              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/map">Map Fields →</a>
+            {% elif batch.status == 'mapped' or batch.status == 'standardized' %}
+              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/review">Review →</a>
+            {% elif batch.status == 'approved' %}
+              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/test-run">Create Test Run →</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      No batches yet. Upload one above to get started.
+      <div><a class="btn" href="#upload-batch">Upload a batch</a></div>
+    </div>
+    {% endif %}
   </div>
 
-  <div class="card">
-    <h2 style="margin-top:0;">Upload Candidate Batch</h2>
-    <form id="uploadForm" enctype="multipart/form-data">
-      <label>Batch Name *</label>
-      <input type="text" name="batch_name" id="batchName" placeholder="e.g., LinkedIn_Jan2026" required />
-
-      <label>CSV Files *</label>
-      <input type="file" name="files" id="files" multiple accept=".csv" required />
-      <div class="hint">Upload one or more CSV files to standardize and process.</div>
-
-      <button type="submit">Upload Batch</button>
-    </form>
-  </div>
-
-  <h2>Batches for this Role</h2>
-  {% if batches %}
-  <table>
-    <thead>
-      <tr><th>Batch Name</th><th>Status</th><th>Created</th><th></th></tr>
-    </thead>
-    <tbody>
-    {% for batch in batches %}
-      <tr>
-        <td><strong>{{ batch.name }}</strong></td>
-        <td><span class="pill {{ batch.status }}">{{ batch.status }}</span></td>
-        <td>{{ batch.created_at }}</td>
-        <td>
-          {% if batch.status == 'uploaded' %}
-            <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/map">Map Fields →</a>
-          {% elif batch.status == 'mapped' or batch.status == 'standardized' %}
-            <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/review">Review →</a>
-          {% elif batch.status == 'approved' %}
-            <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/test-run">Create Test Run →</a>
-          {% endif %}
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="hint">No batches yet. Upload one above to get started!</p>
-  {% endif %}
+  <div id="toast-container" class="toast-container"></div>
+  <script src="/static/ui.js"></script>
 
   <script>
     const roleId = "{{ role.id }}";
+    const showToast = (message, type = 'success') => {
+      if (window.showToast) {
+        window.showToast(message, type);
+      }
+    };
 
     const docStatusEls = {
       jd: document.getElementById('doc-status-jd'),
@@ -251,6 +229,7 @@
         updateAnalyzeState();
       } catch (err) {
         console.error('Failed to load documents', err);
+        showToast('Failed to load documents.', 'error');
       }
     }
 
@@ -271,7 +250,7 @@
 
     function setCriteriaMessage(message, isError = false) {
       criteriaMessageEl.textContent = message || '';
-      criteriaMessageEl.style.color = isError ? '#a00' : '#1e8e3e';
+      criteriaMessageEl.classList.toggle('error', isError);
     }
 
     function setCriteriaLocked(isLocked) {
@@ -363,16 +342,19 @@
         const data = await res.json();
         if (!res.ok) {
           setCriteriaMessage(data.error || 'Failed to load criteria.', true);
+          showToast(data.error || 'Failed to load criteria.', 'error');
           return;
         }
         populateCriteria(data.criteria);
       } catch (err) {
         setCriteriaMessage(`Failed to load criteria: ${err.message}`, true);
+        showToast(`Failed to load criteria: ${err.message}`, 'error');
       }
     }
 
     saveCriteriaBtn.addEventListener('click', async () => {
       setCriteriaMessage('');
+      saveCriteriaBtn.classList.add('loading');
       const payload = {
         must_haves: linesFromTextarea(mustHavesEl.value),
         gating_params: {
@@ -393,12 +375,17 @@
         const data = await res.json();
         if (!res.ok) {
           setCriteriaMessage(data.error || 'Failed to save criteria.', true);
+          showToast(data.error || 'Failed to save criteria.', 'error');
           return;
         }
         populateCriteria(data.criteria);
         setCriteriaMessage(`Saved as v${data.criteria.version}`);
+        showToast('Criteria saved.', 'success');
       } catch (err) {
         setCriteriaMessage(`Failed to save criteria: ${err.message}`, true);
+        showToast(`Failed to save criteria: ${err.message}`, 'error');
+      } finally {
+        saveCriteriaBtn.classList.remove('loading');
       }
     });
 
@@ -416,20 +403,26 @@
         const data = await res.json();
         if (!res.ok) {
           setCriteriaMessage(data.error || 'Document analysis failed.', true);
+          showToast(data.error || 'Document analysis failed.', 'error');
           return;
         }
         applySuggestedCriteria(data);
         setCriteriaMessage('AI suggestions loaded. Review and save.');
+        showToast('AI suggestions loaded.', 'success');
       } catch (err) {
         setCriteriaMessage(`Document analysis failed: ${err.message}`, true);
+        showToast(`Document analysis failed: ${err.message}`, 'error');
       } finally {
         criteriaSpinnerEl.style.display = 'none';
         updateAnalyzeState();
       }
     });
 
-    async function uploadDocument(type) {
+    async function uploadDocument(type, triggerButton) {
       setDocMessage(type, '');
+      if (triggerButton) {
+        triggerButton.classList.add('loading');
+      }
       const fileInput = docFiles[type];
       const urlInput = docUrls[type];
       const file = fileInput ? fileInput.files[0] : null;
@@ -437,6 +430,9 @@
 
       if (!file && !docUrl) {
         setDocMessage(type, 'Select a file or provide a URL.');
+        if (triggerButton) {
+          triggerButton.classList.remove('loading');
+        }
         return;
       }
 
@@ -456,6 +452,7 @@
         const data = await res.json();
         if (!res.ok) {
           setDocMessage(type, data.error || 'Upload failed.');
+          showToast(data.error || 'Upload failed.', 'error');
           return;
         }
         if (fileInput) {
@@ -465,17 +462,26 @@
           urlInput.value = '';
         }
         await fetchDocuments();
+        showToast('Document uploaded.', 'success');
       } catch (err) {
         setDocMessage(type, 'Upload failed: ' + err.message);
+        showToast(`Upload failed: ${err.message}`, 'error');
+      } finally {
+        if (triggerButton) {
+          triggerButton.classList.remove('loading');
+        }
       }
     }
 
-    async function deleteDocument(type) {
+    async function deleteDocument(type, triggerButton) {
       const doc = docState[type];
       if (!doc) {
         return;
       }
       setDocMessage(type, '');
+      if (triggerButton) {
+        triggerButton.classList.add('loading');
+      }
       try {
         const res = await fetch(`/api/roles/${roleId}/documents/${doc.id}`, {
           method: 'DELETE'
@@ -483,25 +489,32 @@
         const data = await res.json();
         if (!res.ok) {
           setDocMessage(type, data.error || 'Delete failed.');
+          showToast(data.error || 'Delete failed.', 'error');
           return;
         }
         await fetchDocuments();
+        showToast('Document deleted.', 'success');
       } catch (err) {
         setDocMessage(type, 'Delete failed: ' + err.message);
+        showToast(`Delete failed: ${err.message}`, 'error');
+      } finally {
+        if (triggerButton) {
+          triggerButton.classList.remove('loading');
+        }
       }
     }
 
     document.querySelectorAll('.doc-upload').forEach((button) => {
       button.addEventListener('click', () => {
         const type = button.dataset.docType;
-        uploadDocument(type);
+        uploadDocument(type, button);
       });
     });
 
     document.querySelectorAll('.doc-delete').forEach((button) => {
       button.addEventListener('click', () => {
         const type = button.dataset.docType;
-        deleteDocument(type);
+        deleteDocument(type, button);
       });
     });
 
@@ -510,6 +523,11 @@
 
     document.getElementById('uploadForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const submitBtn = document.querySelector('#uploadForm button[type="submit"]');
+      if (submitBtn) {
+        submitBtn.classList.add('loading');
+        submitBtn.disabled = true;
+      }
       const formData = new FormData();
       const batchName = document.getElementById('batchName').value;
       const files = document.getElementById('files').files;
@@ -526,10 +544,18 @@
         });
         const data = await res.json();
         if (data.batch_id) {
+          showToast('Batch uploaded. Redirecting…', 'success');
           window.location.href = `/roles/{{ role.id }}/batches/${data.batch_id}/map`;
+        } else if (data.error) {
+          showToast(data.error, 'error');
         }
       } catch (err) {
-        alert('Upload failed: ' + err.message);
+        showToast(`Upload failed: ${err.message}`, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.classList.remove('loading');
+          submitBtn.disabled = false;
+        }
       }
     });
   </script>

@@ -1,88 +1,18 @@
-:root {
-  color-scheme: light;
-}
-
-body {
-  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  margin: 0;
-  background: #f6f7fb;
-  color: #1f1f1f;
-}
-
-.page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 32px 24px 60px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-  margin-bottom: 24px;
-}
-
-.kicker {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: #6b7280;
-  margin: 0 0 8px;
-}
-
-.page-header h1 {
-  margin: 0 0 8px;
-  font-size: 32px;
-}
-
-.subtitle {
-  margin: 0;
-  color: #5f6368;
-}
-
-.batch-chip {
-  border: 1px solid #e0e0e0;
-  border-radius: 12px;
-  padding: 12px 16px;
-  background: #fff;
-  min-width: 160px;
-  text-align: right;
-}
-
-.batch-chip span {
-  display: block;
-  font-size: 12px;
-  color: #5f6368;
-}
-
 .summary {
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 20px;
-  box-shadow: 0 4px 12px rgba(17, 24, 39, 0.06);
+  box-shadow: var(--shadow);
   margin: 24px 0;
 }
 
 .summary-main {
   display: grid;
   gap: 6px;
-}
-
-.summary-main .label {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: #6b7280;
-}
-
-.summary-main .status {
-  color: #5f6368;
-  font-size: 14px;
 }
 
 .summary-metrics {
@@ -98,16 +28,15 @@ body {
 
 .metric-label {
   font-size: 12px;
-  color: #6b7280;
 }
 
 .run-card,
 .note-card {
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 20px;
-  box-shadow: 0 4px 12px rgba(17, 24, 39, 0.06);
+  box-shadow: var(--shadow);
   margin-bottom: 20px;
 }
 
@@ -126,7 +55,7 @@ body {
 .option input[type="number"] {
   width: 90px;
   padding: 6px 8px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--border);
   border-radius: 6px;
 }
 
@@ -134,36 +63,6 @@ body {
   margin-top: 16px;
   display: grid;
   gap: 8px;
-}
-
-.btn {
-  background: #0b57d0;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-weight: 600;
-  cursor: pointer;
-  width: fit-content;
-}
-
-.btn:disabled {
-  background: #9bb7e9;
-  cursor: not-allowed;
-}
-
-.message {
-  font-size: 14px;
-  color: #1f1f1f;
-}
-
-.message.error {
-  color: #d93025;
-}
-
-.progress {
-  font-size: 14px;
-  color: #5f6368;
 }
 
 @media (max-width: 900px) {

@@ -8,6 +8,7 @@ Started: Mon Jan 26 09:29:51 UTC 2026
 - Role criteria versions live in `role_criteria` with `/api/roles/{role_id}/criteria` for latest/create and `/api/roles/{role_id}/criteria/history` for version history.
 - Test runs start at `POST /api/batches/{batch_id}/test-run` and are polled via `GET /api/test-runs/{test_run_id}`.
 - Full runs use `filter_runs`/`filter_results` with batch ID stored in `filter_runs.input_csv_path` for lookup.
+- Shared UI styling lives in `webapp/static/design-system.css` with toasts via `webapp/static/ui.js` and `#toast-container`.
 ---
 ## 2026-01-26 09:37:48 UTC - FIX-001
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
@@ -200,4 +201,49 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     - Remember to run `python3 database/migrate.py --sql database/schema.sql` to keep data.db aligned with schema changes
   - Useful context (e.g., "the evaluation panel is in component X")
     - Full run progress is polled via `/api/filter-runs/{run_id}` and results export via `/api/filter-runs/{run_id}/export`
+---
+## 2026-01-26 13:12:00 UTC - ADD-006
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented
+- Added shared design system styles, breadcrumbs, and toast notifications across templates
+- Aligned page-specific CSS to design-system tokens and consistent card/button/table styles
+- Added loading spinners/toasts for async actions (mapping, criteria, uploads, runs, exports)
+- Updated run page to use design system and added a run-specific stylesheet
+- Files changed
+- AGENTS.md
+- scripts/ralph/prd.json
+- scripts/ralph/progress.txt
+- webapp/static/design-system.css
+- webapp/static/duplicates.css
+- webapp/static/duplicates.js
+- webapp/static/map.css
+- webapp/static/map.js
+- webapp/static/results.css
+- webapp/static/results.js
+- webapp/static/review.css
+- webapp/static/review.js
+- webapp/static/role.css
+- webapp/static/run.css
+- webapp/static/run_full.css
+- webapp/static/run_full.js
+- webapp/static/test_run.css
+- webapp/static/test_run.js
+- webapp/static/ui.js
+- webapp/templates/duplicates.html
+- webapp/templates/index.html
+- webapp/templates/map.html
+- webapp/templates/results.html
+- webapp/templates/review.html
+- webapp/templates/role.html
+- webapp/templates/roles.html
+- webapp/templates/run.html
+- webapp/templates/run_full.html
+- webapp/templates/test_run.html
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - Shared UI styling lives in `webapp/static/design-system.css` with toast helpers in `webapp/static/ui.js`
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - Non-primary buttons (tabs/summary cards) need overrides because base button styles apply globally
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Batch workflow breadcrumbs follow Home → Role → Batch → Step in templates
 ---

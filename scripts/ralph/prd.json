@@ -331,7 +331,7 @@
         "FAIL: Broken on mobile"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "fileHints": [
         "webapp/static/*.css",
         "webapp/templates/*.html"

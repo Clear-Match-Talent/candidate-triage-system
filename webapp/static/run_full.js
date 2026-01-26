@@ -11,6 +11,11 @@ const subsetInput = document.getElementById('subset-count');
 
 let pollingTimer = null;
 let runStartedAt = null;
+const showToast = (message, type = 'success') => {
+  if (window.showToast) {
+    window.showToast(message, type);
+  }
+};
 
 const setMessage = (text, isError = false) => {
   if (!message) {
@@ -67,11 +72,13 @@ const pollRun = async (runId) => {
     const total = payload.candidate_count || 0;
     if (payload.status === 'completed') {
       setProgress('Evaluation complete. Redirecting to results...');
+      showToast('Evaluation complete. Redirecting…', 'success');
       window.location.href = `/roles/${roleId}/batches/${batchId}/results?run_id=${runId}`;
       return;
     }
     if (payload.status === 'failed') {
       setMessage('Run failed. Please try again.', true);
+      showToast('Run failed. Please try again.', 'error');
       startButton && (startButton.disabled = false);
       return;
     }
@@ -85,6 +92,7 @@ const pollRun = async (runId) => {
     setProgress(`Evaluated ${evaluated} of ${total}...${eta}`);
   } catch (error) {
     setMessage(error.message || 'Unable to load run status.', true);
+    showToast(error.message || 'Unable to load run status.', 'error');
   }
   pollingTimer = window.setTimeout(() => pollRun(runId), 3000);
 };
@@ -109,11 +117,14 @@ if (startButton && roleId && batchId) {
       count = getSubsetCount();
       if (!count || count < 1 || count > totalCandidates) {
         setMessage(`Enter a subset between 1 and ${totalCandidates}.`, true);
+        showToast(`Enter a subset between 1 and ${totalCandidates}.`, 'error');
         return;
       }
     }
     startButton.disabled = true;
+    startButton.classList.add('loading');
     setMessage('Starting run...');
+    message?.classList.add('loading');
     setProgress('');
     try {
       const response = await fetch(`/api/batches/${batchId}/run-full?count=${count}`, {
@@ -125,10 +136,16 @@ if (startButton && roleId && batchId) {
       }
       runStartedAt = Date.now();
       setMessage(`Run started with ${payload.candidate_count} candidates.`);
+      startButton.classList.remove('loading');
+      message?.classList.remove('loading');
+      showToast('Run started.', 'success');
       startPolling(payload.run_id);
     } catch (error) {
       setMessage(error.message || 'Unable to start run.', true);
+      showToast(error.message || 'Unable to start run.', 'error');
       startButton.disabled = false;
+      startButton.classList.remove('loading');
+      message?.classList.remove('loading');
     }
   });
 }

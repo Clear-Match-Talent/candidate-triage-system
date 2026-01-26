@@ -3,66 +3,83 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Run {{ run.run_name }}</title>
+  <title>Run {{ run.run_name }} - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/design-system.css" />
   <link rel="stylesheet" href="/static/stepper.css" />
-  <style>
-    body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
-    .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #ddd; }
-    .queued { background: #fafafa; }
-    .running { background: #fff8e1; }
-    .done { background: #e8f5e9; }
-    .error { background: #ffebee; }
-    .card { border: 1px solid #ddd; border-radius: 10px; padding: 16px; max-width: 860px; }
-    a { color: #0b57d0; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    button { padding: 8px 12px; border-radius: 8px; border: 1px solid #111; background: #111; color: #fff; font-weight: 600; cursor: pointer; }
-    code { background: #f6f8fa; padding: 2px 6px; border-radius: 6px; }
-    ul { margin: 6px 0 0 18px; }
-    pre { background: #f6f8fa; padding: 12px; border-radius: 10px; overflow:auto; }
-  </style>
+  <link rel="stylesheet" href="/static/run.css" />
   {% if run.state == 'queued' or run.state == 'running' %}
   <meta http-equiv="refresh" content="3" />
   {% endif %}
 </head>
 <body>
-  <p><a href="/">← Back</a></p>
-  <h1>{{ run.run_name }}</h1>
-  <p>
-    Role: <strong>{{ run.role_label }}</strong><br/>
-    Status: <span class="pill {{ run.state }}">{{ run.state }}</span><br/>
-    Message: {{ run.message }}
-  </p>
+  <div class="page">
+    <nav class="breadcrumbs">
+      <ol>
+        <li><a href="/">Home</a></li>
+        <li><strong>{{ run.run_name }}</strong></li>
+      </ol>
+    </nav>
 
-  {% include "components/stepper.html" %}
+    <header class="page-header">
+      <div>
+        <p class="kicker">Candidate Evaluation</p>
+        <h1>{{ run.run_name }}</h1>
+        <p class="subtitle">{{ run.role_label }}</p>
+      </div>
+      <div class="batch-chip">
+        <span>Status</span>
+        <strong>{{ run.state }}</strong>
+      </div>
+    </header>
 
-  <div class="card">
-    {% if run.state == 'done' and run.outputs %}
-      <h2>Downloads</h2>
-      <ul>
-        <li><a href="/download/{{ run.run_id }}/standardized">standardized_candidates.csv</a></li>
-        <li><a href="/download/{{ run.run_id }}/evaluated">evaluated.csv</a></li>
-        <li><a href="/download/{{ run.run_id }}/proceed">proceed.csv</a></li>
-        <li><a href="/download/{{ run.run_id }}/human_review">human_review.csv</a></li>
-        <li><a href="/download/{{ run.run_id }}/dismiss">dismiss.csv</a></li>
-        {% if run.outputs.duplicates %}
-          <li><a href="/download/{{ run.run_id }}/duplicates">duplicates_report.csv</a></li>
-        {% endif %}
-      </ul>
-      <p class="hint">Next: import <code>human_review.csv</code> into the per-role HUMAN_REVIEW override sheet.</p>
-    {% elif run.state == 'error' %}
-      <h2>Run failed</h2>
-      <p>Check the machine console logs where this UI is running. Common causes:</p>
-      <ul>
-        <li>Python not installed / not on PATH</li>
-        <li>Missing <code>ANTHROPIC_API_KEY</code></li>
-        <li>Dependency install missing: <code>pip install -r requirements.txt</code></li>
-      </ul>
-    {% else %}
-      <p>Running… this page auto-refreshes.</p>
-    {% endif %}
+    {% include "components/stepper.html" %}
+
+    <section class="summary">
+      <div>
+        <span class="label">Role</span>
+        <strong>{{ run.role_label }}</strong>
+        <span class="status">Message: {{ run.message }}</span>
+      </div>
+      <div>
+        <span class="label">Status</span>
+        <span class="pill {{ run.state }}">{{ run.state }}</span>
+      </div>
+    </section>
+
+    <section class="card">
+      {% if run.state == 'done' and run.outputs %}
+        <h2>Downloads</h2>
+        <ul class="run-downloads">
+          <li><a href="/download/{{ run.run_id }}/standardized">standardized_candidates.csv</a></li>
+          <li><a href="/download/{{ run.run_id }}/evaluated">evaluated.csv</a></li>
+          <li><a href="/download/{{ run.run_id }}/proceed">proceed.csv</a></li>
+          <li><a href="/download/{{ run.run_id }}/human_review">human_review.csv</a></li>
+          <li><a href="/download/{{ run.run_id }}/dismiss">dismiss.csv</a></li>
+          {% if run.outputs.duplicates %}
+            <li><a href="/download/{{ run.run_id }}/duplicates">duplicates_report.csv</a></li>
+          {% endif %}
+        </ul>
+        <p class="hint">Next: import <code>human_review.csv</code> into the per-role HUMAN_REVIEW override sheet.</p>
+      {% elif run.state == 'error' %}
+        <h2>Run failed</h2>
+        <p>Check the machine console logs where this UI is running. Common causes:</p>
+        <ul>
+          <li>Python not installed / not on PATH</li>
+          <li>Missing <code>ANTHROPIC_API_KEY</code></li>
+          <li>Dependency install missing: <code>pip install -r requirements.txt</code></li>
+        </ul>
+      {% else %}
+        <div class="message loading">Running… this page auto-refreshes.</div>
+      {% endif %}
+    </section>
+
+    <section class="panel run-debug">
+      <h2>Debug</h2>
+      <pre>{{ run_json }}</pre>
+    </section>
   </div>
 
-  <h3 style="margin-top:18px;">Debug</h3>
-  <pre>{{ run_json }}</pre>
+  <div id="toast-container" class="toast-container"></div>
+  <script src="/static/ui.js"></script>
 </body>
 </html>

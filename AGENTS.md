@@ -161,6 +161,11 @@ The workflow stepper lives in `webapp/templates/components/stepper.html` with sh
 styles in `webapp/static/stepper.css`. Pass `stepper` context from `webapp/main.py`
 using `build_stepper_context(...)` so the active step reflects batch status.
 
+Use `webapp/static/design-system.css` for shared layout/typography/button/table styles,
+and include `/static/ui.js` plus the `#toast-container` element in templates to enable
+toast notifications. Batch workflow pages use breadcrumbs in the order:
+Home → Role → Batch → Current Step.
+
 ### Review Data
 The review UI pulls `/api/batches/{batch_id}/candidates`, which returns `custom_fields`
 and includes custom field values alongside standardized fields for table rendering.

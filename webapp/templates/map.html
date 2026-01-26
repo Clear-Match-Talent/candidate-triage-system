@@ -4,11 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Map Fields - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/design-system.css" />
   <link rel="stylesheet" href="/static/stepper.css" />
   <link rel="stylesheet" href="/static/map.css" />
 </head>
 <body>
   <div class="page" data-role-id="{{ role_id }}" data-batch-id="{{ batch_id }}">
+    <nav class="breadcrumbs">
+      <ol>
+        <li><a href="/">Home</a></li>
+        <li><a href="/roles/{{ role_id }}">{{ role_name or role_id }}</a></li>
+        <li><a href="/roles/{{ role_id }}/batches/{{ batch_id }}/review">{{ batch_name or batch_id }}</a></li>
+        <li><strong>Map Fields</strong></li>
+      </ol>
+    </nav>
+
     <header class="page-header">
       <div>
         <p class="kicker">Candidate Standardization</p>
@@ -42,19 +52,21 @@
         </div>
 
         <div class="actions-bar">
-          <button id="add-custom-field" class="btn-secondary">+ Add Custom Field</button>
+          <button id="add-custom-field" class="btn secondary">+ Add Custom Field</button>
           <div class="actions-right">
             <div class="required-note">
               <strong>Note:</strong> linkedin_url must be mapped to continue.
             </div>
             <p id="mapping-error" class="error hidden"></p>
-            <button id="apply-mappings" disabled class="btn-primary">Apply Mappings</button>
+            <button id="apply-mappings" disabled class="btn">Apply Mappings</button>
           </div>
         </div>
       </div>
     </main>
   </div>
 
+  <div id="toast-container" class="toast-container"></div>
+  <script src="/static/ui.js"></script>
   <script src="/static/map.js"></script>
 </body>
 </html>

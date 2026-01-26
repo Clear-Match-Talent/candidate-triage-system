@@ -16,6 +16,11 @@ const summaryButtons = document.querySelectorAll('.summary-card');
 let cachedResults = [];
 let criteriaLabels = [];
 let activeFilter = 'All';
+const showToast = (message, type = 'success') => {
+  if (window.showToast) {
+    window.showToast(message, type);
+  }
+};
 
 const statusClass = (status) => {
   if (status === 'Pass') return 'pass';
@@ -75,7 +80,10 @@ const renderRows = () => {
   });
 
   if (!filtered.length) {
-    resultsEmpty && (resultsEmpty.style.display = 'block');
+    if (resultsEmpty) {
+      resultsEmpty.classList.remove('loading');
+      resultsEmpty.style.display = 'block';
+    }
     return;
   }
 
@@ -152,6 +160,11 @@ const loadResults = async () => {
   if (!runId) {
     return;
   }
+  if (resultsEmpty) {
+    resultsEmpty.textContent = 'Loading results...';
+    resultsEmpty.classList.add('loading');
+    resultsEmpty.style.display = 'block';
+  }
   try {
     const response = await fetch(`/api/filter-runs/${runId}`);
     const payload = await response.json();
@@ -162,15 +175,25 @@ const loadResults = async () => {
     criteriaLabels = buildCriteriaLabels(payload.criteria_columns || {});
     setSummary(payload.bucket_counts || {});
     renderRows();
+    resultsEmpty && resultsEmpty.classList.remove('loading');
   } catch (error) {
-    resultsEmpty && (resultsEmpty.textContent = error.message || 'Unable to load results.');
-    resultsEmpty && (resultsEmpty.style.display = 'block');
+    if (resultsEmpty) {
+      resultsEmpty.textContent = error.message || 'Unable to load results.';
+      resultsEmpty.classList.remove('loading');
+      resultsEmpty.style.display = 'block';
+    }
+    showToast(error.message || 'Unable to load results.', 'error');
   }
 };
 
 const loadLatestRun = async () => {
   if (runId || !roleId || !batchId) {
     return;
+  }
+  if (resultsEmpty) {
+    resultsEmpty.textContent = 'Loading latest run...';
+    resultsEmpty.classList.add('loading');
+    resultsEmpty.style.display = 'block';
   }
   try {
     const response = await fetch(`/api/batches/${batchId}/runs/latest?role_id=${roleId}`);
@@ -181,8 +204,12 @@ const loadLatestRun = async () => {
     runId = payload.run_id;
     await loadResults();
   } catch (error) {
-    resultsEmpty && (resultsEmpty.textContent = error.message || 'No results yet.');
-    resultsEmpty && (resultsEmpty.style.display = 'block');
+    if (resultsEmpty) {
+      resultsEmpty.textContent = error.message || 'No results yet.';
+      resultsEmpty.classList.remove('loading');
+      resultsEmpty.style.display = 'block';
+    }
+    showToast(error.message || 'No results yet.', 'error');
   }
 };
 
@@ -212,6 +239,7 @@ exportButtons.forEach((button) => {
       return;
     }
     const bucket = button.dataset.export || 'All';
+    showToast(`Exporting ${bucket} candidates…`, 'success');
     const url = new URL(`/api/filter-runs/${runId}/export`, window.location.origin);
     if (bucket && bucket !== 'All') {
       url.searchParams.set('bucket', bucket);

@@ -29,6 +29,11 @@ const STANDARDIZED_FIELDS = [
 let currentCustomFields = [];
 
 const toTitle = (value) => value.replace(/_/g, ' ');
+const showToast = (message, type = 'success') => {
+  if (window.showToast) {
+    window.showToast(message, type);
+  }
+};
 
 const setMetric = (element, value) => {
   if (element) {
@@ -36,16 +41,18 @@ const setMetric = (element, value) => {
   }
 };
 
-const renderEmptyState = (message) => {
-  tableContainer.innerHTML = `<div class="empty-state">${message}</div>`;
+const renderEmptyState = (message, isLoading = false) => {
+  const className = isLoading ? 'empty-state loading' : 'empty-state';
+  tableContainer.innerHTML = `<div class="${className}">${message}</div>`;
 };
 
-const setApproveMessage = (message, isError = false) => {
+const setApproveMessage = (message, isError = false, isLoading = false) => {
   if (!approveMessage) {
     return;
   }
   approveMessage.textContent = message;
   approveMessage.classList.toggle('error', isError);
+  approveMessage.classList.toggle('loading', isLoading);
 };
 
 const buildTable = (columns, rows, rowAccessor) => {
@@ -190,7 +197,7 @@ const fetchCandidates = async (view) => {
     renderEmptyState('Missing batch id.');
     return;
   }
-  renderEmptyState('Loading candidates...');
+  renderEmptyState('Loading candidates...', true);
 
   try {
     const response = await fetch(`/api/batches/${batchId}/candidates?view=${view}`);
@@ -217,6 +224,7 @@ const fetchCandidates = async (view) => {
     }
   } catch (error) {
     renderEmptyState('Unable to load candidate data.');
+    showToast('Unable to load candidate data.', 'error');
   }
 };
 
@@ -240,16 +248,22 @@ tabs.forEach((tab) => {
 
 if (exportBtn && batchId) {
   exportBtn.href = `/api/batches/${batchId}/export`;
+  exportBtn.addEventListener('click', () => {
+    showToast('Exporting standardized CSV…', 'success');
+  });
 }
 
 if (exportDuplicatesBtn && batchId) {
   exportDuplicatesBtn.href = `/api/batches/${batchId}/duplicates/export`;
+  exportDuplicatesBtn.addEventListener('click', () => {
+    showToast('Exporting duplicates CSV…', 'success');
+  });
 }
 
 if (approveBtn && batchId && roleId) {
   approveBtn.addEventListener('click', async () => {
     approveBtn.disabled = true;
-    setApproveMessage('Approving batch...');
+    setApproveMessage('Approving batch...', false, true);
     try {
       const response = await fetch(`/api/batches/${batchId}/approve`, {
         method: 'POST',
@@ -259,11 +273,13 @@ if (approveBtn && batchId && roleId) {
         throw new Error(payload.error || 'Failed to approve batch.');
       }
       setApproveMessage('Batch approved. Redirecting to test run...');
+      showToast('Batch approved.', 'success');
       window.setTimeout(() => {
         window.location.href = `/roles/${roleId}/batches/${batchId}/test-run`;
       }, 900);
     } catch (error) {
       setApproveMessage(error.message || 'Unable to approve batch.', true);
+      showToast(error.message || 'Unable to approve batch.', 'error');
       approveBtn.disabled = false;
     }
   });

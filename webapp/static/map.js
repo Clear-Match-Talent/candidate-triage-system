@@ -26,6 +26,11 @@ let customFields = [];
 let hasAttemptedApply = false;
 
 const normalizeValue = (value) => (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const showToast = (message, type = 'success') => {
+  if (window.showToast) {
+    window.showToast(message, type);
+  }
+};
 
 /**
  * Create an option element for a select dropdown
@@ -219,12 +224,13 @@ const addCustomField = () => {
 
   // Check if field already exists
   if (STANDARD_FIELDS.includes(normalizedName) || customFields.includes(normalizedName)) {
-    alert('This field already exists.');
+    showToast('This field already exists.', 'error');
     return;
   }
 
   customFields.push(normalizedName);
   renderGrid();
+  showToast(`Added custom field: ${normalizedName}`, 'success');
 };
 
 /**
@@ -280,6 +286,7 @@ const buildMappingsPayload = () => {
  */
 const loadMappings = async () => {
   try {
+    loadingState.classList.add('loading');
     const response = await fetch(`/api/batches/${batchId}/suggest-mappings`, {
       method: 'POST',
     });
@@ -293,14 +300,17 @@ const loadMappings = async () => {
 
     loadingState.classList.add('hidden');
     gridContainer.classList.remove('hidden');
+    loadingState.classList.remove('loading');
 
     errorBanner.classList.add('hidden');
     renderGrid();
   } catch (error) {
     console.error('Error loading mappings:', error);
     loadingState.textContent = 'Unable to load mappings. Please try again.';
+    loadingState.classList.remove('loading');
     errorBanner.textContent = 'Unable to load mappings. Please refresh the page.';
     errorBanner.classList.remove('hidden');
+    showToast('Unable to load mappings.', 'error');
   }
 };
 
@@ -316,6 +326,7 @@ const applyMappings = async () => {
 
   applyButton.disabled = true;
   applyButton.textContent = 'Applying...';
+  applyButton.classList.add('loading');
   errorBanner.classList.add('hidden');
 
   try {
@@ -332,14 +343,18 @@ const applyMappings = async () => {
       throw new Error(errorData.error || 'Failed to apply mappings.');
     }
 
-    // Redirect to review page
-    window.location.href = `/roles/${roleId}/batches/${batchId}/review`;
+    showToast('Mappings applied. Redirecting…', 'success');
+    window.setTimeout(() => {
+      window.location.href = `/roles/${roleId}/batches/${batchId}/review`;
+    }, 600);
   } catch (error) {
     console.error('Error applying mappings:', error);
     applyButton.disabled = false;
     applyButton.textContent = 'Apply Mappings';
+    applyButton.classList.remove('loading');
     errorBanner.textContent = error.message || 'Unable to apply mappings. Please try again.';
     errorBanner.classList.remove('hidden');
+    showToast(error.message || 'Unable to apply mappings.', 'error');
   }
 };
 

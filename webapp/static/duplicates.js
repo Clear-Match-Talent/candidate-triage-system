@@ -1,12 +1,24 @@
 const page = document.querySelector('.page');
+const roleId = page?.dataset.roleId;
 const batchId = page?.dataset.batchId;
 
 const duplicateCount = document.getElementById('duplicate-count');
 const tableContainer = document.getElementById('table-container');
 const exportLink = document.getElementById('export-duplicates');
 
-const renderEmptyState = (message) => {
-  tableContainer.innerHTML = `<div class="empty-state">${message}</div>`;
+const showToast = (message, type = 'success') => {
+  if (window.showToast) {
+    window.showToast(message, type);
+  }
+};
+
+const renderEmptyState = (message, isLoading = false) => {
+  const action =
+    roleId && batchId
+      ? `<div><a class="btn" href="/roles/${roleId}/batches/${batchId}/review">Back to review</a></div>`
+      : '';
+  const className = isLoading ? 'empty-state loading' : 'empty-state';
+  tableContainer.innerHTML = `<div class="${className}">${message}${action}</div>`;
 };
 
 const buildTable = (rows) => {
@@ -55,6 +67,7 @@ const loadDuplicates = async () => {
     return;
   }
 
+  renderEmptyState('Loading duplicates...', true);
   try {
     const response = await fetch(`/api/batches/${batchId}/duplicates`);
     if (!response.ok) {
@@ -77,11 +90,15 @@ const loadDuplicates = async () => {
     tableContainer.appendChild(buildTable(duplicates));
   } catch (error) {
     renderEmptyState('Unable to load duplicates.');
+    showToast('Unable to load duplicates.', 'error');
   }
 };
 
 if (exportLink && batchId) {
   exportLink.href = `/api/batches/${batchId}/duplicates/export`;
+  exportLink.addEventListener('click', () => {
+    showToast('Exporting duplicates CSV…', 'success');
+  });
 }
 
 loadDuplicates();

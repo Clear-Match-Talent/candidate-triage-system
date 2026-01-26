@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Test Run Setup - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/design-system.css" />
   <link rel="stylesheet" href="/static/stepper.css" />
   <link rel="stylesheet" href="/static/test_run.css" />
 </head>
@@ -17,6 +18,15 @@
     data-criteria-version="{{ criteria.version if criteria else '' }}"
     data-criteria-locked="{{ 1 if criteria and criteria.is_locked else 0 }}"
   >
+    <nav class="breadcrumbs">
+      <ol>
+        <li><a href="/">Home</a></li>
+        <li><a href="/roles/{{ role_id }}">{{ role_name or role_id }}</a></li>
+        <li><a href="/roles/{{ role_id }}/batches/{{ batch_id }}/review">{{ batch_name or batch_id }}</a></li>
+        <li><strong>Test Run</strong></li>
+      </ol>
+    </nav>
+
     <header class="page-header">
       <div>
         <p class="kicker">Candidate Standardization</p>
@@ -119,6 +129,8 @@
     </section>
   </div>
 
+  <div id="toast-container" class="toast-container"></div>
+  <script src="/static/ui.js"></script>
   <script src="/static/test_run.js"></script>
 </body>
 </html>
