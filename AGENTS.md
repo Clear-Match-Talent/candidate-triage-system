@@ -137,6 +137,10 @@ For candidate batch uploads, save files under `uploads/batches/{batch_id}` and
 persist metadata with `webapp.db.create_candidate_batch` and
 `webapp.db.insert_batch_file_upload`.
 
+Role documents live under `uploads/roles/{role_id}` and are managed through
+`/api/roles/{role_id}/documents` using `doc_type` values `jd`, `intake`,
+`calibration` (uploads replace the previous document of the same type).
+
 ### CSV Processing
 ```python
 # Always use pandas for CSV I/O

@@ -24,6 +24,14 @@
     a:hover { text-decoration: underline; }
     .nav { margin-bottom: 16px; }
     .nav a { margin-right: 16px; }
+    .doc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 12px; }
+    .doc-slot { border: 1px dashed #ccc; border-radius: 10px; padding: 12px; }
+    .doc-title { font-weight: 600; margin: 0 0 8px; }
+    .doc-status { font-size: 13px; color: #444; margin-bottom: 10px; }
+    .doc-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .doc-actions button { margin-top: 0; }
+    .doc-url { margin-top: 8px; }
+    .doc-message { font-size: 12px; color: #a00; margin-top: 6px; min-height: 16px; }
   </style>
 </head>
 <body>
@@ -36,6 +44,45 @@
   {% if role.description %}
   <p class="hint">{{ role.description }}</p>
   {% endif %}
+
+  <div class="card" id="role-documents">
+    <h2 style="margin-top:0;">Role Documents</h2>
+    <div class="doc-grid">
+      <div class="doc-slot" data-doc-type="jd">
+        <p class="doc-title">Job Description</p>
+        <div class="doc-status" id="doc-status-jd">Not uploaded</div>
+        <input type="file" id="file-jd" accept=".pdf,.docx,.txt" />
+        <div class="doc-actions">
+          <button type="button" class="doc-upload" data-doc-type="jd">Upload</button>
+          <button type="button" class="doc-delete" data-doc-type="jd" style="display:none;">Delete</button>
+        </div>
+        <div class="doc-message" id="doc-message-jd"></div>
+      </div>
+
+      <div class="doc-slot" data-doc-type="intake">
+        <p class="doc-title">Intake Form</p>
+        <div class="doc-status" id="doc-status-intake">Not uploaded</div>
+        <input type="file" id="file-intake" accept=".pdf,.docx,.txt" />
+        <input type="text" class="doc-url" id="url-intake" placeholder="Google Doc URL (optional)" />
+        <div class="doc-actions">
+          <button type="button" class="doc-upload" data-doc-type="intake">Upload</button>
+          <button type="button" class="doc-delete" data-doc-type="intake" style="display:none;">Delete</button>
+        </div>
+        <div class="doc-message" id="doc-message-intake"></div>
+      </div>
+
+      <div class="doc-slot" data-doc-type="calibration">
+        <p class="doc-title">Calibration Candidates</p>
+        <div class="doc-status" id="doc-status-calibration">Not uploaded</div>
+        <input type="file" id="file-calibration" accept=".csv" />
+        <div class="doc-actions">
+          <button type="button" class="doc-upload" data-doc-type="calibration">Upload</button>
+          <button type="button" class="doc-delete" data-doc-type="calibration" style="display:none;">Delete</button>
+        </div>
+        <div class="doc-message" id="doc-message-calibration"></div>
+      </div>
+    </div>
+  </div>
 
   <div class="card">
     <h2 style="margin-top:0;">Upload Candidate Batch</h2>
@@ -81,6 +128,147 @@
   {% endif %}
 
   <script>
+    const roleId = "{{ role.id }}";
+
+    const docStatusEls = {
+      jd: document.getElementById('doc-status-jd'),
+      intake: document.getElementById('doc-status-intake'),
+      calibration: document.getElementById('doc-status-calibration')
+    };
+    const docMessageEls = {
+      jd: document.getElementById('doc-message-jd'),
+      intake: document.getElementById('doc-message-intake'),
+      calibration: document.getElementById('doc-message-calibration')
+    };
+    const docFiles = {
+      jd: document.getElementById('file-jd'),
+      intake: document.getElementById('file-intake'),
+      calibration: document.getElementById('file-calibration')
+    };
+    const docUrls = {
+      intake: document.getElementById('url-intake')
+    };
+
+    const docState = {};
+
+    function setDocMessage(type, message) {
+      if (docMessageEls[type]) {
+        docMessageEls[type].textContent = message || '';
+      }
+    }
+
+    function updateDocSlot(type) {
+      const statusEl = docStatusEls[type];
+      const deleteBtn = document.querySelector(`.doc-delete[data-doc-type="${type}"]`);
+      const uploadBtn = document.querySelector(`.doc-upload[data-doc-type="${type}"]`);
+      const doc = docState[type];
+
+      if (doc) {
+        statusEl.textContent = doc.filename || 'Uploaded';
+        deleteBtn.style.display = 'inline-block';
+        uploadBtn.textContent = 'Replace';
+      } else {
+        statusEl.textContent = 'Not uploaded';
+        deleteBtn.style.display = 'none';
+        uploadBtn.textContent = 'Upload';
+      }
+    }
+
+    async function fetchDocuments() {
+      try {
+        const res = await fetch(`/api/roles/${roleId}/documents`);
+        const data = await res.json();
+        docState.jd = null;
+        docState.intake = null;
+        docState.calibration = null;
+        (data.documents || []).forEach((doc) => {
+          docState[doc.doc_type] = doc;
+        });
+        ['jd', 'intake', 'calibration'].forEach(updateDocSlot);
+      } catch (err) {
+        console.error('Failed to load documents', err);
+      }
+    }
+
+    async function uploadDocument(type) {
+      setDocMessage(type, '');
+      const fileInput = docFiles[type];
+      const urlInput = docUrls[type];
+      const file = fileInput ? fileInput.files[0] : null;
+      const docUrl = urlInput ? urlInput.value.trim() : '';
+
+      if (!file && !docUrl) {
+        setDocMessage(type, 'Select a file or provide a URL.');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('doc_type', type);
+      if (file) {
+        formData.append('file', file);
+      } else if (docUrl) {
+        formData.append('doc_url', docUrl);
+      }
+
+      try {
+        const res = await fetch(`/api/roles/${roleId}/documents`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setDocMessage(type, data.error || 'Upload failed.');
+          return;
+        }
+        if (fileInput) {
+          fileInput.value = '';
+        }
+        if (urlInput) {
+          urlInput.value = '';
+        }
+        await fetchDocuments();
+      } catch (err) {
+        setDocMessage(type, 'Upload failed: ' + err.message);
+      }
+    }
+
+    async function deleteDocument(type) {
+      const doc = docState[type];
+      if (!doc) {
+        return;
+      }
+      setDocMessage(type, '');
+      try {
+        const res = await fetch(`/api/roles/${roleId}/documents/${doc.id}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setDocMessage(type, data.error || 'Delete failed.');
+          return;
+        }
+        await fetchDocuments();
+      } catch (err) {
+        setDocMessage(type, 'Delete failed: ' + err.message);
+      }
+    }
+
+    document.querySelectorAll('.doc-upload').forEach((button) => {
+      button.addEventListener('click', () => {
+        const type = button.dataset.docType;
+        uploadDocument(type);
+      });
+    });
+
+    document.querySelectorAll('.doc-delete').forEach((button) => {
+      button.addEventListener('click', () => {
+        const type = button.dataset.docType;
+        deleteDocument(type);
+      });
+    });
+
+    fetchDocuments();
+
     document.getElementById('uploadForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const formData = new FormData();

@@ -15,13 +15,14 @@ As a developer, I need a complete database schema to support the AI filtering sy
 ## Acceptance Criteria
 
 ### Schema Implementation
-- [ ] All 7 tables created with correct columns and types:
+- [ ] All 8 tables created with correct columns and types:
   - `roles` - Role/project management
   - `criteria_versions` - Versioned criteria configurations
   - `filter_runs` - Run metadata and status
   - `filter_results` - Per-candidate results
   - `enriched_candidates` - LinkedIn enrichment cache
   - `uploaded_files` - Document storage references
+  - `role_documents` - Role document storage references
   - `test_runs` - Test candidate set persistence
 
 ### Data Integrity
@@ -32,6 +33,7 @@ As a developer, I need a complete database schema to support the AI filtering sy
   - `filter_runs.status` IN ('running', 'completed', 'failed')
   - `filter_results.final_determination` IN ('Proceed', 'Human Review', 'Dismiss', 'Unable to Enrich')
   - `uploaded_files.file_type` IN ('jd', 'intake', 'calibration')
+  - `role_documents.doc_type` IN ('jd', 'intake', 'calibration')
 
 ### Performance
 - [ ] Indexes created on all foreign keys
@@ -41,6 +43,7 @@ As a developer, I need a complete database schema to support the AI filtering sy
   - `filter_results.run_id`, `filter_results.final_determination`
   - `enriched_candidates.linkedin_url`, `enriched_candidates.fetched_at`
   - `uploaded_files.role_id`
+  - `role_documents.role_id`
   - `test_runs.role_id`
 
 ### Documentation
@@ -202,6 +205,20 @@ CREATE TABLE uploaded_files (
     FOREIGN KEY (role_id) REFERENCES roles(id)
 );
 CREATE INDEX idx_uploaded_files_role_id ON uploaded_files(role_id);
+
+-- =============================================================================
+-- ROLE DOCUMENTS
+-- =============================================================================
+CREATE TABLE role_documents (
+    id TEXT PRIMARY KEY,
+    role_id TEXT NOT NULL,
+    doc_type TEXT NOT NULL CHECK (doc_type IN ('jd', 'intake', 'calibration')),
+    filename TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (role_id) REFERENCES roles(id)
+);
+CREATE INDEX idx_role_documents_role_id ON role_documents(role_id);
 
 -- =============================================================================
 -- TEST RUNS (persist test candidate sets)

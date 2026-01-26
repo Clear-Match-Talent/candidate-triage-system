@@ -151,6 +151,134 @@ def get_role_name(role_id: str) -> Optional[str]:
         conn.close()
 
 
+def list_role_documents(role_id: str) -> List[Dict[str, Any]]:
+    """List role documents for a role."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, role_id, doc_type, filename, file_path, uploaded_at
+            FROM role_documents
+            WHERE role_id = ?
+            ORDER BY uploaded_at DESC
+            """,
+            (role_id,),
+        )
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_role_document_by_type(
+    role_id: str, doc_type: str
+) -> Optional[Dict[str, Any]]:
+    """Fetch the latest role document for a given type."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, role_id, doc_type, filename, file_path, uploaded_at
+            FROM role_documents
+            WHERE role_id = ? AND doc_type = ?
+            ORDER BY uploaded_at DESC
+            LIMIT 1
+            """,
+            (role_id, doc_type),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def get_role_document(doc_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a role document by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, role_id, doc_type, filename, file_path, uploaded_at
+            FROM role_documents
+            WHERE id = ?
+            """,
+            (doc_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def create_role_document(
+    role_id: str, doc_type: str, filename: str, file_path: str
+) -> str:
+    """Create a role document record."""
+    doc_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO role_documents (id, role_id, doc_type, filename, file_path)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (doc_id, role_id, doc_type, filename, file_path),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to create role document role_id=%s", role_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return doc_id
+
+
+def update_role_document(doc_id: str, filename: str, file_path: str) -> None:
+    """Update a role document record."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE role_documents
+            SET filename = ?, file_path = ?, uploaded_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (filename, file_path, doc_id),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to update role document doc_id=%s", doc_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def delete_role_document(doc_id: str) -> None:
+    """Delete a role document record."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM role_documents WHERE id = ?", (doc_id,))
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to delete role document doc_id=%s", doc_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def list_batch_file_uploads(batch_id: str) -> List[Dict[str, Any]]:
     """List uploaded files for a batch with parsed headers."""
     conn = get_data_connection()

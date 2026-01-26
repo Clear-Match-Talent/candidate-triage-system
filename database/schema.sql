@@ -107,6 +107,20 @@ CREATE TABLE IF NOT EXISTS uploaded_files (
 CREATE INDEX IF NOT EXISTS idx_uploaded_files_role_id ON uploaded_files(role_id);
 
 -- =============================================================================
+-- ROLE DOCUMENTS
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS role_documents (
+    id TEXT PRIMARY KEY,
+    role_id TEXT NOT NULL,
+    doc_type TEXT NOT NULL CHECK (doc_type IN ('jd', 'intake', 'calibration')),
+    filename TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (role_id) REFERENCES roles(id)
+);
+CREATE INDEX IF NOT EXISTS idx_role_documents_role_id ON role_documents(role_id);
+
+-- =============================================================================
 -- TEST RUNS (persist test candidate sets)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS test_runs (

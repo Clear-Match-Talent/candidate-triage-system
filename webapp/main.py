@@ -51,6 +51,7 @@ from webapp.chatbot_context import build_agent_context, format_field_stats, form
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNS_DIR = REPO_ROOT / "runs"
 UPLOADS_DIR = REPO_ROOT / "uploads" / "batches"
+ROLE_UPLOADS_DIR = REPO_ROOT / "uploads" / "roles"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STANDARDIZED_FIELDS = [
@@ -87,6 +88,7 @@ STEPPER_URL_BUILDERS = {
 }
 
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
+ROLE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Candidate Triage System UI", version="0.1.0")
 
@@ -197,6 +199,13 @@ def safe_filename(name: str) -> str:
     if not out:
         out = "file.csv"
     return out[:120]
+
+
+DOC_TYPE_CONFIG = {
+    "jd": {"extensions": {".pdf", ".docx", ".txt"}, "allow_url": False},
+    "intake": {"extensions": {".pdf", ".docx", ".txt"}, "allow_url": True},
+    "calibration": {"extensions": {".csv"}, "allow_url": False},
+}
 
 
 def read_csv_metadata(file_path: Path) -> Tuple[List[str], int]:
@@ -630,6 +639,114 @@ def upload_candidate_batch(
             "total_rows": total_rows,
         }
     )
+
+
+def _is_url(path_value: Optional[str]) -> bool:
+    return bool(path_value and path_value.startswith("http"))
+
+
+@app.post("/api/roles/{role_id}/documents")
+async def upload_role_document(
+    role_id: str,
+    doc_type: str = Form(...),
+    file: Optional[UploadFile] = File(default=None),
+    doc_url: str = Form(default=""),
+):
+    doc_type = (doc_type or "").strip().lower()
+    if doc_type not in DOC_TYPE_CONFIG:
+        return JSONResponse({"error": "Invalid doc_type"}, status_code=400)
+
+    config = DOC_TYPE_CONFIG[doc_type]
+    doc_url = (doc_url or "").strip()
+
+    if file and doc_url:
+        return JSONResponse(
+            {"error": "Provide either a file or a URL, not both"},
+            status_code=400,
+        )
+
+    if not file and not doc_url:
+        return JSONResponse({"error": "No file or URL provided"}, status_code=400)
+
+    if doc_url and not config["allow_url"]:
+        return JSONResponse(
+            {"error": "URL uploads not supported for this type"},
+            status_code=400,
+        )
+
+    existing = db.get_role_document_by_type(role_id, doc_type)
+
+    if doc_url:
+        filename = doc_url
+        file_path = doc_url
+    else:
+        original_name = Path(file.filename or "file").name
+        filename = safe_filename(original_name)
+        ext = Path(filename).suffix.lower()
+        if ext not in config["extensions"]:
+            return JSONResponse(
+                {"error": f"Invalid file type for {doc_type}"},
+                status_code=400,
+            )
+
+        role_dir = ROLE_UPLOADS_DIR / role_id
+        role_dir.mkdir(parents=True, exist_ok=True)
+        file_path = str(role_dir / f"{doc_type}_{filename}")
+        with open(file_path, "wb") as handle:
+            shutil.copyfileobj(file.file, handle)
+        file.file.close()
+
+    if existing:
+        previous_path = existing.get("file_path")
+        db.update_role_document(existing["id"], filename, file_path)
+        if (
+            previous_path
+            and not _is_url(previous_path)
+            and previous_path != file_path
+        ):
+            previous_file = Path(previous_path)
+            if previous_file.exists():
+                previous_file.unlink()
+        doc_id = existing["id"]
+    else:
+        doc_id = db.create_role_document(role_id, doc_type, filename, file_path)
+
+    return JSONResponse(
+        {
+            "id": doc_id,
+            "role_id": role_id,
+            "doc_type": doc_type,
+            "filename": filename,
+            "file_path": file_path,
+        }
+    )
+
+
+@app.get("/api/roles/{role_id}/documents")
+def list_role_documents(role_id: str):
+    documents = db.list_role_documents(role_id)
+    return JSONResponse(
+        {
+            "role_id": role_id,
+            "documents": documents,
+        }
+    )
+
+
+@app.delete("/api/roles/{role_id}/documents/{doc_id}")
+def delete_role_document(role_id: str, doc_id: str):
+    document = db.get_role_document(doc_id)
+    if not document or document.get("role_id") != role_id:
+        return JSONResponse({"error": "Document not found"}, status_code=404)
+
+    file_path = document.get("file_path")
+    if file_path and not _is_url(file_path):
+        path = Path(file_path)
+        if path.exists():
+            path.unlink()
+
+    db.delete_role_document(doc_id)
+    return JSONResponse({"success": True, "id": doc_id})
 
 
 @app.post("/api/batches/{batch_id}/suggest-mappings")
