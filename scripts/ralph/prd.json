@@ -8,14 +8,14 @@
       "title": "Database Schema Design and Implementation",
       "description": "As a developer, I need a complete database schema to support the AI filtering system so that all subsequent user stories can store and retrieve data correctly.",
       "acceptanceCriteria": [
+        "Read complete database schema specification from tasks/us-000a-database-schema.md and implement exactly as documented",
         "All 7 tables created: roles, criteria_versions, filter_runs, filter_results, enriched_candidates, uploaded_files, test_runs",
         "All foreign key relationships defined",
         "CHECK constraints added for enum fields (status, run_type, final_determination, file_type)",
         "Indexes created on all foreign keys and frequently queried columns",
         "JSON structure documented for criteria_data, criteria_evaluations, job_history, education, skills",
         "Schema creation script runs without errors",
-        "Foreign key constraints enforced (orphaned records prevented)",
-        "Typecheck passes"
+        "Foreign key constraints enforced (orphaned records prevented)"
       ],
       "priority": 1,
       "passes": false,
@@ -33,8 +33,7 @@
         "API endpoint: DELETE /api/roles/:id (soft delete - set status='archived')",
         "Roles use UUID primary keys",
         "Created and updated timestamps auto-populated",
-        "Returns proper HTTP status codes (200, 201, 404, 400)",
-        "Typecheck passes"
+        "Returns proper HTTP status codes (200, 201, 404, 400)"
       ],
       "priority": 2,
       "passes": false,
@@ -51,7 +50,6 @@
         "Edit button opens modal to update role metadata",
         "Archive button soft-deletes role (sets status='archived')",
         "Archived roles hidden from main list (optional filter to show them)",
-        "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 3,
@@ -69,8 +67,7 @@
         "Stores file metadata in uploaded_files table (role_id, file_type, filename, file_path, file_size)",
         "Returns file metadata JSON on successful upload",
         "Validates file type (only accept .pdf, .docx, .txt, .md)",
-        "API endpoint: DELETE /api/files/:id (delete uploaded file)",
-        "Typecheck passes"
+        "API endpoint: DELETE /api/files/:id (delete uploaded file)"
       ],
       "priority": 4,
       "passes": false,
@@ -88,7 +85,6 @@
         "Can replace file by uploading new one to same dropzone",
         "Shows upload progress indicator",
         "Error messages for invalid file types or upload failures",
-        "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 5,
@@ -106,8 +102,7 @@
         "Parses Claude response into structured JSON (must_haves array, gating_parameters array, nice_to_haves array)",
         "Stores extracted criteria temporarily (not saved to criteria_versions yet)",
         "Returns extracted criteria JSON to frontend",
-        "Handles extraction failures gracefully (empty arrays if no criteria found)",
-        "Typecheck passes"
+        "Handles extraction failures gracefully (empty arrays if no criteria found)"
       ],
       "priority": 6,
       "passes": false,
@@ -126,7 +121,6 @@
         "User can add/remove nice-to-have items",
         "Save button stores criteria to criteria_versions table with version number",
         "Form validation ensures at least one must-have is defined",
-        "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 7,
@@ -138,14 +132,14 @@
       "title": "LinkedIn Profile Fetching",
       "description": "As a system, I need to fetch LinkedIn profile data using Claude browser tool so I can enrich candidate information for evaluation.",
       "acceptanceCriteria": [
-        "Function accepts LinkedIn URL as input",
-        "Uses Claude browser tool to visit LinkedIn profile page",
-        "Extracts raw HTML or structured profile data",
-        "Handles errors: profile not found (404), rate limits, private profile (login required)",
-        "Returns raw profile data or error status",
-        "Stores raw data in enriched_candidates table with fetched_at timestamp",
-        "Does NOT attempt to parse/extract fields (that's US-005B)",
-        "Typecheck passes"
+        "Create function fetch_linkedin_profile(linkedin_url: str) in filtering/enrichment.py",
+        "Use Claude Code's browser integration: subprocess call to `claude --print --dangerously-skip-permissions` with prompt to visit URL and extract HTML",
+        "Alternative if browser not available: Use requests library to fetch public LinkedIn profile HTML",
+        "Handle errors: return dict with status='success'|'not_found'|'rate_limit'|'requires_login'|'error'",
+        "If successful, return {status: 'success', html: string, fetched_at: timestamp}",
+        "Store result in enriched_candidates table (linkedin_url, raw_data JSON, fetched_at)",
+        "Test with real public LinkedIn profile URL and verify HTML contains profile data",
+        "Verify in browser using dev-browser skill"
       ],
       "priority": 8,
       "passes": false,
@@ -156,16 +150,18 @@
       "title": "LinkedIn Data Extraction",
       "description": "As a system, I need to parse LinkedIn profile data into structured fields so it can be used for criteria evaluation.",
       "acceptanceCriteria": [
-        "Function accepts raw LinkedIn profile data from US-005A",
-        "Extracts current_title and current_company",
-        "Extracts job_history array with title, company, start_date, end_date, duration_months",
-        "Extracts education array with school, degree, field, graduation_year",
-        "Extracts skills array (list of skill names)",
-        "Extracts location string",
-        "Normalizes data into consistent JSON format",
-        "Updates enriched_candidates table with extracted fields",
-        "Handles missing fields gracefully (null or empty array)",
-        "Typecheck passes"
+        "Create function extract_linkedin_data(raw_html: str) in filtering/enrichment.py",
+        "Parse HTML to extract current_title (look for headline/current position)",
+        "Parse HTML to extract current_company",
+        "Parse HTML to extract job_history array: [{title, company, start_date, end_date, duration_months}, ...]",
+        "Parse HTML to extract education array: [{school, degree, field, graduation_year}, ...]",
+        "Parse HTML to extract skills array (list of skill names)",
+        "Parse HTML to extract location string",
+        "Handle missing fields gracefully (set to null or empty array)",
+        "Return structured dict with all extracted fields",
+        "Update enriched_candidates table with extracted fields (current_title, current_company, job_history JSON, education JSON, skills JSON, location)",
+        "Test with sample LinkedIn HTML and verify extraction accuracy",
+        "Verify in browser using dev-browser skill"
       ],
       "priority": 9,
       "passes": false,
@@ -176,13 +172,16 @@
       "title": "Enrichment Caching",
       "description": "As a system, I need to cache enriched LinkedIn data to avoid redundant fetches and respect rate limits.",
       "acceptanceCriteria": [
-        "Before fetching LinkedIn profile, check enriched_candidates table by linkedin_url",
-        "If cached data exists and fetched_at < 30 days ago, return cached data",
-        "If cached data is stale (>30 days) or missing, fetch fresh data",
-        "Cache lookup uses index on linkedin_url for fast queries",
-        "Cache expiry computed as: datetime('now') <= datetime(fetched_at, '+30 days')",
-        "Function returns {data, source: 'cache'|'fresh'} to indicate cache hit/miss",
-        "Typecheck passes"
+        "Create function get_enriched_candidate(linkedin_url: str, max_age_days: int = 30) in filtering/enrichment.py",
+        "Check enriched_candidates table for existing record by linkedin_url",
+        "If found and fetched_at is within max_age_days (default 30), return cached data with source='cache'",
+        "If stale or not found, call fetch_linkedin_profile() and extract_linkedin_data()",
+        "Store/update enriched data in database",
+        "Return {data: dict, source: 'cache'|'fresh', fetched_at: timestamp}",
+        "Add index on enriched_candidates.linkedin_url for fast lookups (should exist from US-000A)",
+        "Test cache hit: fetch same URL twice within 30 days, verify second call returns cached data",
+        "Test cache miss: fetch URL, wait (or manually set fetched_at to 31 days ago), fetch again, verify fresh fetch",
+        "Verify in browser using dev-browser skill"
       ],
       "priority": 10,
       "passes": false,
@@ -198,8 +197,7 @@
         "Selected candidate identifiers (emails or unique IDs) stored in test_runs table",
         "test_run_id created and linked to role_id and criteria_version_id",
         "Returns selected candidates array to frontend",
-        "Subsequent test runs with same criteria_version reuse same 50 candidates (unless user explicitly resets)",
-        "Typecheck passes"
+        "Subsequent test runs with same criteria_version reuse same 50 candidates (unless user explicitly resets)"
       ],
       "priority": 11,
       "passes": false,
@@ -216,8 +214,7 @@
         "For each criteria, determine Pass/Fail/Unsure with one-sentence reasoning",
         "Apply final determination logic: Proceed/Human Review/Dismiss/Unable to Enrich per FR-3",
         "Store test results in filter_results table linked to test run_id",
-        "Update filter_runs with counts (proceed_count, review_count, dismiss_count, unable_to_enrich_count)",
-        "Typecheck passes"
+        "Update filter_runs with counts (proceed_count, review_count, dismiss_count, unable_to_enrich_count)"
       ],
       "priority": 12,
       "passes": false,
@@ -236,7 +233,6 @@
         "Export to CSV button downloads test results with all criteria evaluations",
         "Refine Criteria button returns to US-001F form (preserves current test set)",
         "Approve & Run button proceeds to US-003 (full/subset run options)",
-        "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 13,
@@ -257,7 +253,6 @@
         "Processes candidates using same logic as US-002B (enrichment + evaluation)",
         "Updates filter_run counts (proceed_count, review_count, dismiss_count, unable_to_enrich_count) incrementally",
         "Sets status='completed' when done, sets completed_at timestamp",
-        "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 14,
@@ -275,8 +270,7 @@
         "Supports pagination: offset and limit query params",
         "Returns JSON array of candidates with all fields: name, email, linkedin, criteria_evaluations, final_determination",
         "Returns total count for pagination",
-        "Uses indexes for fast queries even with 1000+ candidates",
-        "Typecheck passes"
+        "Uses indexes for fast queries even with 1000+ candidates"
       ],
       "priority": 15,
       "passes": false,
@@ -294,7 +288,6 @@
         "Column headers are sortable (click to sort by name, determination, date)",
         "Pagination controls (prev/next, page numbers) if >100 results",
         "Shows counts: X Proceed, Y Human Review, Z Dismiss, W Unable to Enrich",
-        "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 16,
@@ -313,7 +306,6 @@
         "CSV includes metadata: run_date, criteria_version, role_name",
         "CSV respects current filter (if user filtered to Proceed only, export only shows Proceed)",
         "Download triggers with proper filename: results_[role-name]_[date].csv",
-        "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 17,
@@ -332,7 +324,6 @@
         "Previous criteria_version retained (not deleted)",
         "Can re-run test validation with updated criteria on same test set or new random 50",
         "Run history shows which criteria version was used for each run",
-        "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 18,
@@ -351,7 +342,6 @@
         "Click on run opens results page (US-004B) for that specific run",
         "Can export results from any historical run (not just latest)",
         "Shows run status (running, completed, failed)",
-        "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 19,

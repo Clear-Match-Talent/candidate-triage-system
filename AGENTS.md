@@ -250,6 +250,58 @@ python verify/003-test-chatbot.py
 
 ---
 
+## Database Schema Reference
+
+**The complete database schema design is documented in:**
+- `tasks/us-000a-database-schema.md`
+
+This file contains:
+- All 7 tables with exact SQL definitions
+- All indexes and CHECK constraints
+- JSON structure specifications for criteria_data, criteria_evaluations, job_history, education, skills
+- Example data formats
+
+**When implementing database stories (US-000A or any schema modifications):**
+- Read this document FIRST
+- Implement exactly as specified
+- Do not deviate from documented structure without updating the spec
+
+---
+
+## Testing Backend API Endpoints
+
+For all backend API endpoint stories (US-001A, US-004A, etc.):
+
+### Manual Testing Approach
+1. Implement the endpoint in `webapp/main.py` or appropriate module
+2. Start Flask dev server: `python webapp/main.py`
+3. Test with curl:
+   ```bash
+   # Example: Create role
+   curl -X POST http://localhost:5000/api/roles \
+     -H "Content-Type: application/json" \
+     -d '{"name":"Test Role","description":"Test"}'
+   
+   # Example: Get all roles
+   curl http://localhost:5000/api/roles
+   
+   # Example: Get single role
+   curl http://localhost:5000/api/roles/{role_id}
+   ```
+4. Verify response format matches acceptance criteria
+5. Check database to confirm data was created/updated:
+   ```bash
+   sqlite3 data.db "SELECT * FROM roles;"
+   ```
+
+### Success Criteria for API Stories
+- Endpoint returns expected HTTP status codes (200, 201, 404, 400, 500)
+- Response JSON matches specified format
+- Database changes persist correctly
+- Error cases handled gracefully (invalid input, missing resources, etc.)
+
+---
+
 ## Ralph Workflow
 
 This project uses Ralph for autonomous feature development.
