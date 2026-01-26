@@ -4,6 +4,9 @@
 
 set -e
 
+# Source environment if available
+[[ -f ~/.bashrc ]] && source ~/.bashrc
+
 # Parse arguments
 TOOL="amp"  # Default to amp for backwards compatibility
 MAX_ITERATIONS=10
@@ -31,6 +34,14 @@ done
 # Validate tool choice
 if [[ "$TOOL" != "amp" && "$TOOL" != "claude" ]]; then
   echo "Error: Invalid tool '$TOOL'. Must be 'amp' or 'claude'."
+  exit 1
+fi
+
+# Validate Claude API key if using Claude
+if [[ "$TOOL" == "claude" ]] && [[ -z "$ANTHROPIC_API_KEY" ]]; then
+  echo "Error: ANTHROPIC_API_KEY environment variable not set."
+  echo "Please run: export ANTHROPIC_API_KEY='your-key-here'"
+  echo "Or add it to ~/.bashrc for persistence"
   exit 1
 fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
