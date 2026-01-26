@@ -1,3 +1,55 @@
 # Ralph Progress Log
 Started: Mon Jan 26 09:29:51 UTC 2026
 ---
+## 2026-01-26 09:37:48 UTC - FIX-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented grid-based field mapping interactions with strict high-confidence prefill rules and custom field support
+- Files changed: webapp/static/map.js, scripts/ralph/prd.json
+- **Learnings for future iterations:**
+  - Patterns discovered: None
+  - Gotchas encountered: Python is only available as `python3`; `pytest` is not installed in the environment
+  - Useful context: Mapping UI now sends matrix payload `{mappings: {target: {filename: source_column}}, custom_fields: [...]}`
+---
+
+## Codebase Patterns
+- Grid-based mapping UI: Rows = target fields, Columns = CSV files, Cells = dropdowns
+- Payload format for grid: `{ mappings: {targetField: {filename: sourceCol}}, custom_fields: [] }`
+- AI mapping suggestions only applied for HIGH confidence (exact/near-exact matches)
+- Custom fields stored in standardized_data JSON alongside standard fields
+- LinkedIn URL is always required for standardization
+- Smart name splitting: "John Smith" → first/last, "Madonna" → first only, blank last
+- Backend converts grid format to file-centric format internally for processing
+- Sticky table positioning creates frozen panes effect for large grids
+
+---
+
+## 2026-01-26 (Extended) - FIX-001 Complete Implementation
+- What was implemented:
+  - Complete redesign of field mapping page from file-centric to grid-based layout
+  - Grid with rows=target fields, columns=uploaded CSV files
+  - Each cell has dropdown with (blank) + all source columns from that file
+  - Add Custom Field button allows dynamic addition of custom target fields
+  - Custom fields shown with CUSTOM badge and × remove button
+  - LinkedIn URL row highlighted with REQUIRED badge and yellow background
+  - Apply Mappings button disabled until linkedin_url is mapped
+  - High-confidence AI suggestions only (prevents bad guesses)
+  - Full error handling with clear messages, preserves work on error
+  - Mobile responsive with adjusted layout for small screens
+
+- Files changed:
+  - webapp/templates/map.html - New grid HTML structure with table
+  - webapp/static/map.css - Complete CSS rewrite with sticky positioning
+  - webapp/static/map.js - Complete JS rewrite for grid logic and new payload
+  - webapp/main.py - Updated apply_batch_mappings() for new payload format
+  - webapp/main.py - Enhanced apply_mappings_to_row() with smart name splitting
+
+- **Learnings for future iterations:**
+  - The batch workflow is: role → batch → upload CSVs → map fields → standardize → review
+  - Sticky positioning on thead th + td.target-cell creates Excel-like frozen panes
+  - Backend still uses file-centric mappings internally, grid format is UI-only
+  - Custom fields don't require schema changes - stored in JSON column
+  - High confidence = exact match or starts-with match (e.g., "first_name" matches "firstname")
+  - Name splitting handles edge cases: single names, middle names, empty last names
+  - Mobile requires disabling sticky positioning to prevent layout issues
+
+---

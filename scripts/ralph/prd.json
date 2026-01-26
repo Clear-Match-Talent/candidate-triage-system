@@ -53,7 +53,7 @@
         "FAIL: Apply Mappings fails silently"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "fileHints": ["webapp/templates/map.html", "webapp/static/map.js", "webapp/static/map.css", "webapp/main.py"]
     },
     {
