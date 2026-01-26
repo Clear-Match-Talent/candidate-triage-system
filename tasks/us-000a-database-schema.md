@@ -15,9 +15,10 @@ As a developer, I need a complete database schema to support the AI filtering sy
 ## Acceptance Criteria
 
 ### Schema Implementation
-- [ ] All 8 tables created with correct columns and types:
+- [ ] All 9 tables created with correct columns and types:
   - `roles` - Role/project management
   - `criteria_versions` - Versioned criteria configurations
+  - `role_criteria` - Criteria configuration versions for role detail UI
   - `filter_runs` - Run metadata and status
   - `filter_results` - Per-candidate results
   - `enriched_candidates` - LinkedIn enrichment cache
@@ -34,6 +35,7 @@ As a developer, I need a complete database schema to support the AI filtering sy
   - `filter_results.final_determination` IN ('Proceed', 'Human Review', 'Dismiss', 'Unable to Enrich')
   - `uploaded_files.file_type` IN ('jd', 'intake', 'calibration')
   - `role_documents.doc_type` IN ('jd', 'intake', 'calibration')
+  - `role_criteria.is_locked` IN (0, 1)
 
 ### Performance
 - [ ] Indexes created on all foreign keys
@@ -44,11 +46,15 @@ As a developer, I need a complete database schema to support the AI filtering sy
   - `enriched_candidates.linkedin_url`, `enriched_candidates.fetched_at`
   - `uploaded_files.role_id`
   - `role_documents.role_id`
+  - `role_criteria.role_id`
   - `test_runs.role_id`
 
 ### Documentation
 - [ ] JSON structure documented for:
   - `criteria_versions.criteria_data`
+  - `role_criteria.must_haves`
+  - `role_criteria.gating_params`
+  - `role_criteria.nice_to_haves`
   - `filter_results.criteria_evaluations`
   - `enriched_candidates.job_history`
   - `enriched_candidates.education`
@@ -221,6 +227,22 @@ CREATE TABLE role_documents (
 CREATE INDEX idx_role_documents_role_id ON role_documents(role_id);
 
 -- =============================================================================
+-- ROLE CRITERIA
+-- =============================================================================
+CREATE TABLE role_criteria (
+    id TEXT PRIMARY KEY,
+    role_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    must_haves JSON NOT NULL,
+    gating_params JSON NOT NULL,
+    nice_to_haves JSON NOT NULL,
+    is_locked INTEGER NOT NULL DEFAULT 0 CHECK (is_locked IN (0, 1)),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (role_id) REFERENCES roles(id)
+);
+CREATE INDEX idx_role_criteria_role_id ON role_criteria(role_id);
+
+-- =============================================================================
 -- TEST RUNS (persist test candidate sets)
 -- =============================================================================
 CREATE TABLE test_runs (
@@ -238,6 +260,40 @@ CREATE INDEX idx_test_runs_role_id ON test_runs(role_id);
 ---
 
 ## JSON Structure Documentation
+
+### role_criteria Format
+
+Stored in `role_criteria.must_haves`, `role_criteria.gating_params`,
+`role_criteria.nice_to_haves`:
+
+```json
+{
+  "must_haves": ["string requirement", "string requirement"],
+  "gating_params": {
+    "job_hopper": false,
+    "bootcamp_only": false,
+    "location_mismatch": false,
+    "custom_rule": "string (optional)"
+  },
+  "nice_to_haves": ["string preference", "string preference"]
+}
+```
+
+**Example:**
+```json
+{
+  "must_haves": ["5+ years Python", "Backend systems experience"],
+  "gating_params": {
+    "job_hopper": true,
+    "bootcamp_only": false,
+    "location_mismatch": true,
+    "custom_rule": "No recent layoffs"
+  },
+  "nice_to_haves": ["AWS certification", "Experience with Kafka"]
+}
+```
+
+---
 
 ### criteria_data Format
 

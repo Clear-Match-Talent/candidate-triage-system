@@ -141,6 +141,11 @@ Role documents live under `uploads/roles/{role_id}` and are managed through
 `/api/roles/{role_id}/documents` using `doc_type` values `jd`, `intake`,
 `calibration` (uploads replace the previous document of the same type).
 
+Role criteria versions are stored in `role_criteria` and managed via
+`/api/roles/{role_id}/criteria` (latest + create) and
+`/api/roles/{role_id}/criteria/history` (all versions). Locking is controlled
+by `is_locked` to keep the form read-only after approval.
+
 ### CSV Processing
 ```python
 # Always use pandas for CSV I/O

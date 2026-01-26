@@ -11,6 +11,7 @@
     label { display:block; font-weight: 600; margin-top: 12px; }
     input[type=text], input[type=file] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
     input[type=file] { padding: 6px; }
+    textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-family: inherit; }
     button { margin-top: 14px; padding: 10px 14px; border-radius: 8px; border: 1px solid #111; background: #111; color: #fff; font-weight: 600; cursor: pointer; }
     .hint { color: #555; font-size: 13px; margin-top: 6px; }
     table { border-collapse: collapse; width: 100%; margin-top: 16px; }
@@ -32,6 +33,12 @@
     .doc-actions button { margin-top: 0; }
     .doc-url { margin-top: 8px; }
     .doc-message { font-size: 12px; color: #a00; margin-top: 6px; min-height: 16px; }
+    .criteria-section { margin-top: 8px; }
+    .criteria-group { margin-top: 12px; }
+    .criteria-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+    .criteria-checkbox { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+    .criteria-message { font-size: 13px; margin-top: 8px; min-height: 18px; }
+    .criteria-locked { font-size: 13px; color: #a00; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -81,6 +88,51 @@
         </div>
         <div class="doc-message" id="doc-message-calibration"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="card" id="role-criteria">
+    <h2 style="margin-top:0;">Filtering Criteria <span id="criteria-version"></span></h2>
+    <div class="criteria-locked" id="criteria-locked-message" style="display:none;">
+      Criteria locked after approved test run
+    </div>
+    <div class="criteria-section">
+      <div class="criteria-group">
+        <label for="must-haves">Must-Have Requirements</label>
+        <textarea id="must-haves" rows="5" placeholder="One requirement per line"></textarea>
+      </div>
+
+      <div class="criteria-group">
+        <label>Gating Parameters</label>
+        <div class="criteria-row">
+          <label class="criteria-checkbox">
+            <input type="checkbox" id="gate-job-hopper" />
+            Job hopper (&gt;3 jobs in 5 years)
+          </label>
+          <label class="criteria-checkbox">
+            <input type="checkbox" id="gate-bootcamp-only" />
+            Bootcamp-only education (no degree)
+          </label>
+          <label class="criteria-checkbox">
+            <input type="checkbox" id="gate-location-mismatch" />
+            Location mismatch
+          </label>
+        </div>
+        <input
+          type="text"
+          id="gate-custom-rule"
+          placeholder="Custom rule (optional)"
+          style="margin-top: 8px;"
+        />
+      </div>
+
+      <div class="criteria-group">
+        <label for="nice-to-haves">Nice-to-Haves</label>
+        <textarea id="nice-to-haves" rows="4" placeholder="One per line"></textarea>
+      </div>
+
+      <button type="button" id="save-criteria">Save Criteria</button>
+      <div class="criteria-message" id="criteria-message"></div>
     </div>
   </div>
 
@@ -190,6 +242,106 @@
       }
     }
 
+    const criteriaVersionEl = document.getElementById('criteria-version');
+    const criteriaMessageEl = document.getElementById('criteria-message');
+    const criteriaLockedEl = document.getElementById('criteria-locked-message');
+    const mustHavesEl = document.getElementById('must-haves');
+    const niceToHavesEl = document.getElementById('nice-to-haves');
+    const gateJobHopperEl = document.getElementById('gate-job-hopper');
+    const gateBootcampOnlyEl = document.getElementById('gate-bootcamp-only');
+    const gateLocationMismatchEl = document.getElementById('gate-location-mismatch');
+    const gateCustomRuleEl = document.getElementById('gate-custom-rule');
+    const saveCriteriaBtn = document.getElementById('save-criteria');
+
+    function setCriteriaMessage(message, isError = false) {
+      criteriaMessageEl.textContent = message || '';
+      criteriaMessageEl.style.color = isError ? '#a00' : '#1e8e3e';
+    }
+
+    function setCriteriaLocked(isLocked) {
+      criteriaLockedEl.style.display = isLocked ? 'block' : 'none';
+      [
+        mustHavesEl,
+        niceToHavesEl,
+        gateJobHopperEl,
+        gateBootcampOnlyEl,
+        gateLocationMismatchEl,
+        gateCustomRuleEl
+      ].forEach((el) => {
+        el.disabled = isLocked;
+      });
+      saveCriteriaBtn.disabled = isLocked;
+    }
+
+    function linesFromTextarea(value) {
+      return value
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    }
+
+    function populateCriteria(criteria) {
+      if (!criteria) {
+        criteriaVersionEl.textContent = '';
+        setCriteriaLocked(false);
+        return;
+      }
+      criteriaVersionEl.textContent = `(v${criteria.version})`;
+      mustHavesEl.value = (criteria.must_haves || []).join('\n');
+      niceToHavesEl.value = (criteria.nice_to_haves || []).join('\n');
+      const gating = criteria.gating_params || {};
+      gateJobHopperEl.checked = Boolean(gating.job_hopper);
+      gateBootcampOnlyEl.checked = Boolean(gating.bootcamp_only);
+      gateLocationMismatchEl.checked = Boolean(gating.location_mismatch);
+      gateCustomRuleEl.value = gating.custom_rule || '';
+      setCriteriaLocked(Boolean(criteria.is_locked));
+    }
+
+    async function fetchCriteria() {
+      try {
+        const res = await fetch(`/api/roles/${roleId}/criteria`);
+        const data = await res.json();
+        if (!res.ok) {
+          setCriteriaMessage(data.error || 'Failed to load criteria.', true);
+          return;
+        }
+        populateCriteria(data.criteria);
+      } catch (err) {
+        setCriteriaMessage(`Failed to load criteria: ${err.message}`, true);
+      }
+    }
+
+    saveCriteriaBtn.addEventListener('click', async () => {
+      setCriteriaMessage('');
+      const payload = {
+        must_haves: linesFromTextarea(mustHavesEl.value),
+        gating_params: {
+          job_hopper: gateJobHopperEl.checked,
+          bootcamp_only: gateBootcampOnlyEl.checked,
+          location_mismatch: gateLocationMismatchEl.checked,
+          custom_rule: gateCustomRuleEl.value.trim()
+        },
+        nice_to_haves: linesFromTextarea(niceToHavesEl.value)
+      };
+
+      try {
+        const res = await fetch(`/api/roles/${roleId}/criteria`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setCriteriaMessage(data.error || 'Failed to save criteria.', true);
+          return;
+        }
+        populateCriteria(data.criteria);
+        setCriteriaMessage(`Saved as v${data.criteria.version}`);
+      } catch (err) {
+        setCriteriaMessage(`Failed to save criteria: ${err.message}`, true);
+      }
+    });
+
     async function uploadDocument(type) {
       setDocMessage(type, '');
       const fileInput = docFiles[type];
@@ -268,6 +420,7 @@
     });
 
     fetchDocuments();
+    fetchCriteria();
 
     document.getElementById('uploadForm').addEventListener('submit', async (e) => {
       e.preventDefault();

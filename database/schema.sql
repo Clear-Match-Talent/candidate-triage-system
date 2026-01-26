@@ -118,6 +118,22 @@ CREATE TABLE IF NOT EXISTS role_documents (
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (role_id) REFERENCES roles(id)
 );
+
+-- =============================================================================
+-- ROLE CRITERIA
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS role_criteria (
+    id TEXT PRIMARY KEY,
+    role_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    must_haves JSON NOT NULL,
+    gating_params JSON NOT NULL,
+    nice_to_haves JSON NOT NULL,
+    is_locked INTEGER NOT NULL DEFAULT 0 CHECK (is_locked IN (0, 1)),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (role_id) REFERENCES roles(id)
+);
+CREATE INDEX IF NOT EXISTS idx_role_criteria_role_id ON role_criteria(role_id);
 CREATE INDEX IF NOT EXISTS idx_role_documents_role_id ON role_documents(role_id);
 
 -- =============================================================================

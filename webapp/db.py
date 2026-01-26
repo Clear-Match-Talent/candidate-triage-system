@@ -279,6 +279,160 @@ def delete_role_document(doc_id: str) -> None:
         conn.close()
 
 
+def _parse_role_criteria_row(row: sqlite3.Row) -> Dict[str, Any]:
+    must_haves = []
+    if row["must_haves"]:
+        try:
+            must_haves = json.loads(row["must_haves"])
+        except json.JSONDecodeError:
+            must_haves = []
+
+    gating_params = {}
+    if row["gating_params"]:
+        try:
+            gating_params = json.loads(row["gating_params"])
+        except json.JSONDecodeError:
+            gating_params = {}
+
+    nice_to_haves = []
+    if row["nice_to_haves"]:
+        try:
+            nice_to_haves = json.loads(row["nice_to_haves"])
+        except json.JSONDecodeError:
+            nice_to_haves = []
+
+    return {
+        "id": row["id"],
+        "role_id": row["role_id"],
+        "version": row["version"],
+        "must_haves": must_haves,
+        "gating_params": gating_params,
+        "nice_to_haves": nice_to_haves,
+        "is_locked": bool(row["is_locked"]),
+        "created_at": row["created_at"],
+    }
+
+
+def get_latest_role_criteria(role_id: str) -> Optional[Dict[str, Any]]:
+    """Return the latest criteria configuration for a role."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                id,
+                role_id,
+                version,
+                must_haves,
+                gating_params,
+                nice_to_haves,
+                is_locked,
+                created_at
+            FROM role_criteria
+            WHERE role_id = ?
+            ORDER BY version DESC, created_at DESC
+            LIMIT 1
+            """,
+            (role_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return _parse_role_criteria_row(row)
+    finally:
+        conn.close()
+
+
+def list_role_criteria_history(role_id: str) -> List[Dict[str, Any]]:
+    """Return all criteria configurations for a role."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                id,
+                role_id,
+                version,
+                must_haves,
+                gating_params,
+                nice_to_haves,
+                is_locked,
+                created_at
+            FROM role_criteria
+            WHERE role_id = ?
+            ORDER BY version DESC, created_at DESC
+            """,
+            (role_id,),
+        )
+        rows = cursor.fetchall()
+        return [_parse_role_criteria_row(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def create_role_criteria(
+    role_id: str,
+    must_haves: List[str],
+    gating_params: Dict[str, Any],
+    nice_to_haves: List[str],
+) -> Dict[str, Any]:
+    """Create a new criteria configuration version for a role."""
+    criteria_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT COALESCE(MAX(version), 0) AS max_version
+            FROM role_criteria
+            WHERE role_id = ?
+            """,
+            (role_id,),
+        )
+        row = cursor.fetchone()
+        version = int(row["max_version"] or 0) + 1
+        cursor.execute(
+            """
+            INSERT INTO role_criteria (
+                id,
+                role_id,
+                version,
+                must_haves,
+                gating_params,
+                nice_to_haves,
+                is_locked
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 0)
+            """,
+            (
+                criteria_id,
+                role_id,
+                version,
+                json.dumps(must_haves),
+                json.dumps(gating_params),
+                json.dumps(nice_to_haves),
+            ),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to create role criteria role_id=%s", role_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {
+        "id": criteria_id,
+        "role_id": role_id,
+        "version": version,
+        "must_haves": must_haves,
+        "gating_params": gating_params,
+        "nice_to_haves": nice_to_haves,
+        "is_locked": False,
+    }
+
+
 def list_batch_file_uploads(batch_id: str) -> List[Dict[str, Any]]:
     """List uploaded files for a batch with parsed headers."""
     conn = get_data_connection()

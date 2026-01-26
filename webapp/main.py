@@ -645,6 +645,32 @@ def _is_url(path_value: Optional[str]) -> bool:
     return bool(path_value and path_value.startswith("http"))
 
 
+def _normalize_criteria_lines(value: Any) -> List[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [line.strip() for line in value.splitlines() if line.strip()]
+    return [str(value).strip()]
+
+
+def _normalize_gating_params(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {
+            "job_hopper": False,
+            "bootcamp_only": False,
+            "location_mismatch": False,
+            "custom_rule": "",
+        }
+    return {
+        "job_hopper": bool(value.get("job_hopper")),
+        "bootcamp_only": bool(value.get("bootcamp_only")),
+        "location_mismatch": bool(value.get("location_mismatch")),
+        "custom_rule": (value.get("custom_rule") or "").strip(),
+    }
+
+
 @app.post("/api/roles/{role_id}/documents")
 async def upload_role_document(
     role_id: str,
@@ -747,6 +773,53 @@ def delete_role_document(role_id: str, doc_id: str):
 
     db.delete_role_document(doc_id)
     return JSONResponse({"success": True, "id": doc_id})
+
+
+@app.get("/api/roles/{role_id}/criteria")
+def get_role_criteria(role_id: str):
+    if not db.get_role_name(role_id):
+        return JSONResponse({"error": "Role not found"}, status_code=404)
+
+    criteria = db.get_latest_role_criteria(role_id)
+    return JSONResponse({"role_id": role_id, "criteria": criteria})
+
+
+@app.get("/api/roles/{role_id}/criteria/history")
+def get_role_criteria_history(role_id: str):
+    if not db.get_role_name(role_id):
+        return JSONResponse({"error": "Role not found"}, status_code=404)
+
+    history = db.list_role_criteria_history(role_id)
+    return JSONResponse({"role_id": role_id, "history": history})
+
+
+@app.post("/api/roles/{role_id}/criteria")
+def create_role_criteria(role_id: str, payload: Dict[str, Any] = Body(...)):
+    if not db.get_role_name(role_id):
+        return JSONResponse({"error": "Role not found"}, status_code=404)
+
+    latest = db.get_latest_role_criteria(role_id)
+    if latest and latest.get("is_locked"):
+        return JSONResponse(
+            {"error": "Criteria locked after approved test run"},
+            status_code=403,
+        )
+
+    must_haves = _normalize_criteria_lines(payload.get("must_haves"))
+    nice_to_haves = _normalize_criteria_lines(payload.get("nice_to_haves"))
+    gating_params = _normalize_gating_params(payload.get("gating_params"))
+
+    try:
+        criteria = db.create_role_criteria(
+            role_id, must_haves, gating_params, nice_to_haves
+        )
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to save criteria: {exc}"},
+            status_code=500,
+        )
+
+    return JSONResponse({"role_id": role_id, "criteria": criteria})
 
 
 @app.post("/api/batches/{batch_id}/suggest-mappings")

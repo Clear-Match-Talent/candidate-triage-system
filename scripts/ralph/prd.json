@@ -166,7 +166,7 @@
         "FAIL: Locked criteria can still be edited"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "fileHints": ["webapp/templates/role.html", "webapp/main.py", "webapp/db.py", "database/schema.sql"]
     },
     {
