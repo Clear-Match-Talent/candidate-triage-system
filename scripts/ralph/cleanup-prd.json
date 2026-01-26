@@ -1,0 +1,56 @@
+{
+  "project": "AI Candidate Filtering System - Cleanup & Fixes",
+  "branchName": "ralph/cleanup-fixes",
+  "description": "Fix inconsistencies between old and new workflows, update homepage, and ensure all features work end-to-end",
+  "userStories": [
+    {
+      "id": "FIX-001",
+      "title": "Update Homepage to New Workflow",
+      "description": "As a user, I want the homepage to work with the new role-based workflow so there are no broken links or forms",
+      "acceptanceCriteria": [
+        "Remove or update the old /run POST form on homepage",
+        "Add prominent link to /roles page",
+        "Show recent runs from the new system",
+        "Remove references to old /run endpoint",
+        "Homepage clearly explains the new workflow: Create Role → Upload Docs → Configure Criteria → Test → Run"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "FIX-002",
+      "title": "Verify All API Endpoints Work",
+      "description": "As a developer, I need all API endpoints to return proper responses and handle errors gracefully",
+      "acceptanceCriteria": [
+        "Test role creation API",
+        "Test file upload API",
+        "Test criteria extraction API",
+        "Test run creation API",
+        "All endpoints return proper error messages (not 404 for valid routes)",
+        "Document working API endpoints in README or API docs"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "FIX-003",
+      "title": "End-to-End Workflow Verification",
+      "description": "As a user, I want to complete a full candidate evaluation workflow without errors",
+      "acceptanceCriteria": [
+        "Can create a role",
+        "Can upload a CSV of candidates",
+        "Can configure criteria (manually or via AI extraction)",
+        "Can run a test evaluation on 50 candidates",
+        "Can view test results",
+        "Can approve and run full evaluation",
+        "Can view and export final results",
+        "No JavaScript console errors during workflow"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

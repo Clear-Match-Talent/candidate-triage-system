@@ -27,7 +27,7 @@ import uuid
 from io import StringIO
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from fastapi import Body, FastAPI, File, Form, UploadFile
 from fastapi.responses import (
@@ -843,8 +843,23 @@ def list_batch_candidates(batch_id: str, view: str = "standardized"):
     candidates = db.list_raw_candidates(batch_id, exclude_duplicates=True)
     metrics = db.get_batch_metrics(batch_id)
 
+    custom_field_set: Set[str] = set()
+    for candidate in candidates:
+        standardized_data = candidate.get("standardized_data") or {}
+        if isinstance(standardized_data, dict):
+            for key in standardized_data:
+                if key not in STANDARDIZED_FIELDS:
+                    custom_field_set.add(key)
+    custom_fields = sorted(custom_field_set)
+
     candidates_payload: List[Dict[str, Any]] = []
     for candidate in candidates:
+        standardized_data = candidate.get("standardized_data") or {}
+        custom_payload: Dict[str, Any] = {}
+        if isinstance(standardized_data, dict):
+            for field in custom_fields:
+                custom_payload[field] = standardized_data.get(field)
+
         if normalized_view == "raw":
             candidates_payload.append({"raw_data": candidate.get("raw_data")})
             continue
@@ -857,6 +872,7 @@ def list_batch_candidates(batch_id: str, view: str = "standardized"):
             "location": candidate.get("location"),
             "current_company": candidate.get("current_company"),
             "current_title": candidate.get("current_title"),
+            **custom_payload,
         }
 
         if normalized_view == "comparison":
@@ -876,6 +892,7 @@ def list_batch_candidates(batch_id: str, view: str = "standardized"):
             "batch_status": batch.get("status"),
             "view": normalized_view,
             "candidates": candidates_payload,
+            "custom_fields": custom_fields,
             "total_uploaded": metrics["total_uploaded"],
             "deduplicated_count": metrics["deduplicated_count"],
             "final_count": metrics["final_count"],

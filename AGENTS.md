@@ -152,6 +152,10 @@ The workflow stepper lives in `webapp/templates/components/stepper.html` with sh
 styles in `webapp/static/stepper.css`. Pass `stepper` context from `webapp/main.py`
 using `build_stepper_context(...)` so the active step reflects batch status.
 
+### Review Data
+The review UI pulls `/api/batches/{batch_id}/candidates`, which returns `custom_fields`
+and includes custom field values alongside standardized fields for table rendering.
+
 ### LLM Calls
 ```python
 # Always set API key from environment

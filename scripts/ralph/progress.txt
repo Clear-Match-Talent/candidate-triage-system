@@ -3,6 +3,7 @@ Started: Mon Jan 26 09:29:51 UTC 2026
 ---
 ## Codebase Patterns
 - Normalize LinkedIn URLs with `normalize_linkedin_url()` before dedupe and storage.
+- Review API `/api/batches/{batch_id}/candidates` returns `custom_fields` and includes custom field values in standardized payloads.
 ---
 ## 2026-01-26 09:37:48 UTC - FIX-001
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
@@ -65,4 +66,23 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Patterns discovered: Use `normalize_linkedin_url()` before dedupe so stored LinkedIn URLs are consistent
   - Gotchas encountered: `pytest` is not installed in the environment (use `python3`, not `python`)
   - Useful context: Name splitting uses AI for 3+ part names with cached results; falls back to heuristic on failure
+---
+## 2026-01-26 09:58:26 UTC - FIX-003
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented
+- Added custom-field-aware review data payloads and grid rendering for standardized/comparison tabs
+- Added export-duplicates action and read-only batch name display on review page
+- Files changed
+- webapp/main.py
+- webapp/static/review.js
+- webapp/templates/review.html
+- scripts/ralph/prd.json
+- scripts/ralph/progress.txt
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - Review UI builds columns from standard fields plus `custom_fields` returned by the review API
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - Remember to exclude `full_name` from the review display even though it exists in the standardized payload
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Duplicate exports are available via `/api/batches/{batch_id}/duplicates/export`
 ---

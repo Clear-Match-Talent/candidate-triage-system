@@ -1,0 +1,208 @@
+# Ralph Progress Log
+## Codebase Patterns
+- Use `get_enriched_candidate()` in `filtering/enrichment.py` to reuse cached LinkedIn data by age.
+- LinkedIn enrichment extraction is handled in `filtering/enrichment.py` using JSON-LD + HTML fallbacks.
+- Database schema is defined in `database/schema.sql`; initialize with `python3 init_db.py` to create `data.db`.
+- `webapp/db.py` uses `get_data_connection()` for `data.db` (roles, criteria) and `get_connection()` for `runs.db` (pipeline runs).
+- Role document uploads are stored under `uploads/roles/{role_id}` and tracked in `uploaded_files` via `webapp/db.py`.
+- Role document UI loads file metadata via `GET /api/roles/{role_id}/files` on `/roles/{role_id}`.
+- Criteria extraction uses `POST /api/roles/{role_id}/criteria/extract` with the latest uploaded file per type.
+- Criteria versions are created via `POST /api/roles/{role_id}/criteria` and retrieved with `GET /api/roles/{role_id}/criteria/latest`.
+- Test run sampling uses `POST /api/roles/{role_id}/test-runs` with `criteria_version_id` + CSV upload and reuses sets per criteria version.
+- Test run processing uses `POST /api/roles/{role_id}/test-runs/{test_run_id}/process` and stores results in `filter_runs` + `filter_results`.
+- Test run results load from `GET /api/test-runs/{test_run_id}/results` and render at `/roles/{role_id}/test-runs/{test_run_id}/results`.
+- Full/subset runs start with `POST /api/roles/{role_id}/runs` and progress is polled via `GET /api/filter-runs/{run_id}`.
+- Run results API is `GET /api/runs/{run_id}/results` with filter/sort/pagination for result tables.
+- Run results export uses `GET /api/runs/{run_id}/export` with optional filter/sort to download CSV.
+- Role run history is listed via `GET /api/roles/{role_id}/runs` and links to test/full results by `run_type`.
+
+Started: Mon Jan 26 03:33:56 UTC 2026
+---
+## 2026-01-26 03:37:31 UTC - US-000A
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented SQLite schema for roles, criteria versions, filter runs/results, enrichment cache, uploads, and test runs
+- Added database initialization and migration scripts for applying schema SQL
+- Files changed: `database/schema.sql`, `database/migrate.py`, `init_db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: database schema lives in `database/schema.sql` and is applied via `python3 init_db.py` or `python3 database/migrate.py --sql <file>`
+  - Gotchas encountered: use `python3` (no `python` shim in this environment)
+  - Useful context: `data.db` is the primary SQLite database for the new schema
+---
+## 2026-01-26 03:43:52 UTC - US-001A
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented role CRUD API endpoints and data-layer helpers backed by data.db
+- Updated docs to clarify data.db vs runs.db usage
+- Files changed: `webapp/db.py`, `webapp/main.py`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: role CRUD uses `get_data_connection()` in `webapp/db.py` to target `data.db`
+  - Gotchas encountered: `webapp/db.py` already manages `runs.db` for pipeline status; keep connections separate
+  - Useful context: role endpoints are under `/api/roles` in `webapp/main.py`
+---
+## 2026-01-26 03:47:30 UTC - US-001B
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented /roles UI with role cards, create/edit modal, archive action, and archived filter
+- Added roles page route and linked roles entry point from home page
+- Files changed: `webapp/main.py`, `webapp/templates/index.html`, `webapp/templates/roles.html`, `webapp/static/roles.css`, `webapp/static/roles.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Gotchas encountered: dev-browser skill not available in this environment, so browser verification for UI changes could not be completed
+---
+## 2026-01-26 03:50:57 UTC - US-001C
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented role document upload and delete API endpoints with file validation and storage
+- Added uploaded_files database helpers for create/get/delete
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: store role documents under `uploads/roles/{role_id}` and persist metadata in `uploaded_files`
+  - Gotchas encountered: sanitize filenames and validate extensions before saving
+  - Useful context: upload endpoint expects multipart form fields `file_type` and `file`
+---
+## 2026-01-26 03:55:54 UTC - US-001D
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented role detail document upload UI with drag-and-drop dropzones, progress indicator, and file metadata display
+- Added role file listing API and role detail route, plus upload UI styling and navigation from roles list
+- Files changed: `webapp/main.py`, `webapp/db.py`, `webapp/templates/role_detail.html`, `webapp/static/role_detail.css`, `webapp/static/role_detail.js`, `webapp/static/roles.js`, `webapp/static/roles.css`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: role document uploads list via `db.list_uploaded_files(role_id)` and `GET /api/roles/{role_id}/files`
+  - Gotchas encountered: dev-browser skill not available in this environment, so browser verification for UI changes could not be completed
+  - Useful context: role detail UI lives at `/roles/{role_id}` with dropzones keyed by file_type
+---
+## 2026-01-26 03:59:50 UTC - US-001E
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented AI criteria extraction endpoint that reads latest JD/intake/calibration uploads and calls Claude for structured criteria JSON
+- Added document text extraction helpers (txt/md/docx/pdf) with truncation and error handling
+- Added pypdf dependency for PDF parsing
+- Files changed: `webapp/main.py`, `requirements.txt`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: criteria extraction is exposed via `POST /api/roles/{role_id}/criteria/extract` and reads the most recent file per type
+  - Gotchas encountered: PDF parsing requires `pypdf` and will fail without the dependency
+  - Useful context: extraction returns empty arrays with `error: true` on read or parse failures
+---
+## 2026-01-26 04:05:48 UTC - US-001F
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented criteria configuration page with editable must-haves, gating parameters, nice-to-haves, AI refresh, and save flow
+- Added criteria version persistence and latest-criteria retrieval endpoints
+- Files changed: `webapp/main.py`, `webapp/db.py`, `webapp/templates/criteria.html`, `webapp/static/criteria.css`, `webapp/static/criteria.js`, `webapp/templates/role_detail.html`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: criteria versions are stored in `criteria_versions` and saved via `/api/roles/{role_id}/criteria`
+  - Gotchas encountered: dev-browser skill not available in this environment, so browser verification for UI changes could not be completed
+  - Useful context: criteria UI lives at `/roles/{role_id}/criteria` and pulls AI suggestions from `/api/roles/{role_id}/criteria/extract`
+---
+## 2026-01-26 04:15:00 UTC - US-005A
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented LinkedIn profile fetcher with Claude CLI fallback to requests and persisted raw HTML/status to enriched_candidates
+- Added filtering enrichment module and requests dependency
+- Files changed: `filtering/__init__.py`, `filtering/enrichment.py`, `requirements.txt`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: enrichment raw HTML/status should be stored in `enriched_candidates.raw_data` with updated `fetched_at` timestamps
+  - Gotchas encountered: Claude CLI might not be installed; fallback to requests for public profile fetches
+  - Useful context: dev-browser skill not available in this environment, so browser verification for LinkedIn fetches could not be completed
+---
+## 2026-01-26 04:43:34 UTC - US-005B
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added LinkedIn HTML extraction for titles, companies, job history, education, skills, and location
+- Persisted extracted enrichment fields into enriched_candidates on successful fetch
+- Files changed: `filtering/enrichment.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: structured LinkedIn extraction lives in `filtering/enrichment.py` with JSON-LD and HTML fallbacks
+  - Gotchas encountered: avoid parsing skills from full HTML to prevent noisy tokens; only parse from skills sections
+  - Useful context: `fetch_linkedin_profile` now calls `extract_and_store_linkedin_data` when status is success
+---
+## 2026-01-26 04:46:06 UTC - US-005C
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added LinkedIn enrichment caching that reuses recent data and refreshes stale entries
+- Files changed: `filtering/enrichment.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: use `get_enriched_candidate()` to handle cache hit/miss logic and timestamps
+  - Gotchas encountered: use `python3` instead of `python` for quality checks
+  - Useful context: cached enrichment rows parse JSON fields and fallback when fetched_at uses SQLite timestamps
+---
+## 2026-01-26 04:49:50 UTC - US-002A
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented test run sampling endpoint to upload CSVs, select up to 50 candidate identifiers, and persist/reuse test sets by criteria version
+- Added data-layer helpers for criteria lookup and test run creation/retrieval
+- Files changed: `webapp/main.py`, `webapp/db.py`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: test run sampling lives at `POST /api/roles/{role_id}/test-runs` and reuses existing candidate sets per `criteria_version_id`
+  - Gotchas encountered: CSV identifier column selection normalizes names (email/id/linkedin) before sampling
+  - Useful context: test run candidate IDs are stored as JSON in `test_runs.candidate_ids`
+---
+## 2026-01-26 04:58:39 UTC - US-002B
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented test run processing endpoint with LinkedIn enrichment, LLM criteria evaluation, and final determination logic
+- Added filter_runs/filter_results data helpers and persisted test run CSVs for audit
+- Files changed: `webapp/main.py`, `webapp/db.py`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: test run processing uses `filter_runs` with run_id equal to test_run_id and writes per-candidate evaluations to `filter_results`
+  - Gotchas encountered: ensure CSV identifier column matches the stored test_run candidate IDs before processing
+  - Useful context: endpoint expects multipart form data with `criteria_version_id` and CSV upload
+---
+## 2026-01-26 05:10:00 UTC - US-002C
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented test results UI with filter/sort controls, tooltips, and CSV export
+- Added test run results API plus run options placeholder page
+- Files changed: `webapp/main.py`, `webapp/db.py`, `webapp/templates/test_results.html`, `webapp/templates/run_options.html`, `webapp/static/test_results.css`, `webapp/static/test_results.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: test run results are fetched from `GET /api/test-runs/{test_run_id}/results` and rendered at `/roles/{role_id}/test-runs/{test_run_id}/results`
+  - Gotchas encountered: use `python3 -m compileall` for lightweight checks when no pytest suite exists
+  - Useful context: test results CSV export is handled client-side in `webapp/static/test_results.js`
+---
+## 2026-01-26 05:25:09 UTC - US-003
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented run options UI with full/subset selection, CSV upload, and live progress polling
+- Added full/subset run processing endpoint, background evaluation flow, and run status API
+- Added placeholder results page for completed runs
+- Files changed: `webapp/main.py`, `webapp/templates/run_options.html`, `webapp/templates/run_results.html`, `webapp/static/run_options.css`, `webapp/static/run_options.js`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: full/subset runs start via `POST /api/roles/{role_id}/runs` and poll status from `GET /api/filter-runs/{run_id}`
+  - Gotchas encountered: dev-browser skill not available in this environment, so browser verification for UI changes could not be completed
+  - Useful context: run progress updates `filter_runs.current_candidate` as each candidate is evaluated
+---
+## 2026-01-26 05:27:34 UTC - US-004A
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented run results API with filtering, sorting, pagination, and total count response
+- Added data-layer helpers for paginated filter_results queries and counts
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: run results API supports `filter`, `sort`, `offset`, and `limit` query params via `GET /api/runs/{run_id}/results`
+  - Gotchas encountered: validate query params before issuing SQL to keep ordering safe
+  - Useful context: total counts are provided via `db.count_filter_results` to support pagination
+---
+## 2026-01-26 05:32:51 UTC - US-004B
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented run results UI with filter/sort controls, counts summary, expandable criteria details, and pagination
+- Added run results criteria hydration from criteria version for display
+- Files changed: `webapp/main.py`, `webapp/templates/run_results.html`, `webapp/static/run_results.css`, `webapp/static/run_results.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Gotchas encountered: dev-browser skill not available in this environment, so browser verification for UI changes could not be completed
+---
+## 2026-01-26 05:37:40 UTC - US-004C
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added run results CSV export endpoint with filter/sort support and metadata columns
+- Added Export CSV button and client-side download flow for run results
+- Files changed: `webapp/db.py`, `webapp/main.py`, `webapp/templates/run_results.html`, `webapp/static/run_results.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: run results CSV export is served via `/api/runs/{run_id}/export` with filter/sort query params
+  - Gotchas encountered: export needs full result set (not paginated) plus criteria column mapping
+  - Useful context: run results export filename uses `results_{role-name}_{date}.csv`
+---
+## 2026-01-26 05:40:59 UTC - US-006
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added Edit criteria entry point on role detail page and surfaced latest criteria version in role metadata
+- Passed latest criteria version through role detail handler for UI display
+- Files changed: `webapp/main.py`, `webapp/templates/role_detail.html`, `webapp/static/role_detail.css`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: role detail page can display latest criteria version via `db.get_latest_criteria_version(role_id)`
+  - Gotchas encountered: dev-browser skill not available in this environment, so browser verification for UI changes could not be completed
+  - Useful context: criteria form pre-populates from `latest_criteria_json` on `/roles/{role_id}/criteria`
+---
+## 2026-01-26 05:44:33 UTC - US-007
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added role run history API and data helper with criteria version joins
+- Rendered run history section on role detail page with status and result breakdown
+- Styled run history cards and empty state for the role detail UI
+- Files changed: `webapp/db.py`, `webapp/main.py`, `webapp/templates/role_detail.html`, `webapp/static/role_detail.css`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered: role run history uses `list_filter_runs_for_role()` and is exposed at `GET /api/roles/{role_id}/runs`
+  - Gotchas encountered: dev-browser skill not available in this environment, so browser verification for UI changes could not be completed
+  - Useful context: link to test results when `run_type` is `test`, otherwise use `/roles/{role_id}/runs/{run_id}/results`
+---

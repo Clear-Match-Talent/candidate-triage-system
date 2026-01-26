@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ role.name }} - Candidate Triage System</title>
+  <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    h1 { margin: 0 0 8px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 16px; max-width: 860px; margin-bottom: 24px; }
+    label { display:block; font-weight: 600; margin-top: 12px; }
+    input[type=text], input[type=file] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+    input[type=file] { padding: 6px; }
+    button { margin-top: 14px; padding: 10px 14px; border-radius: 8px; border: 1px solid #111; background: #111; color: #fff; font-weight: 600; cursor: pointer; }
+    .hint { color: #555; font-size: 13px; margin-top: 6px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    th, td { border-bottom: 1px solid #eee; padding: 10px 8px; font-size: 14px; text-align: left; }
+    .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #ddd; }
+    .uploaded { background: #fafafa; }
+    .mapped { background: #fff8e1; }
+    .standardized { background: #e3f2fd; }
+    .approved { background: #e8f5e9; }
+    a { color: #0b57d0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .nav { margin-bottom: 16px; }
+    .nav a { margin-right: 16px; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/">← Home</a>
+    <a href="/roles">Roles</a>
+  </div>
+
+  <h1>{{ role.name }}</h1>
+  {% if role.description %}
+  <p class="hint">{{ role.description }}</p>
+  {% endif %}
+
+  <div class="card">
+    <h2 style="margin-top:0;">Upload Candidate Batch</h2>
+    <form id="uploadForm" enctype="multipart/form-data">
+      <label>Batch Name *</label>
+      <input type="text" name="batch_name" id="batchName" placeholder="e.g., LinkedIn_Jan2026" required />
+
+      <label>CSV Files *</label>
+      <input type="file" name="files" id="files" multiple accept=".csv" required />
+      <div class="hint">Upload one or more CSV files to standardize and process.</div>
+
+      <button type="submit">Upload Batch</button>
+    </form>
+  </div>
+
+  <h2>Batches for this Role</h2>
+  {% if batches %}
+  <table>
+    <thead>
+      <tr><th>Batch Name</th><th>Status</th><th>Created</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for batch in batches %}
+      <tr>
+        <td><strong>{{ batch.name }}</strong></td>
+        <td><span class="pill {{ batch.status }}">{{ batch.status }}</span></td>
+        <td>{{ batch.created_at }}</td>
+        <td>
+          {% if batch.status == 'uploaded' %}
+            <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/map">Map Fields →</a>
+          {% elif batch.status == 'mapped' or batch.status == 'standardized' %}
+            <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/review">Review →</a>
+          {% elif batch.status == 'approved' %}
+            <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/test-run">Create Test Run →</a>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">No batches yet. Upload one above to get started!</p>
+  {% endif %}
+
+  <script>
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData();
+      const batchName = document.getElementById('batchName').value;
+      const files = document.getElementById('files').files;
+      
+      formData.append('batch_name', batchName);
+      for (let file of files) {
+        formData.append('files', file);
+      }
+
+      try {
+        const res = await fetch(`/api/roles/{{ role.id }}/batches/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.batch_id) {
+          window.location.href = `/roles/{{ role.id }}/batches/${data.batch_id}/map`;
+        }
+      } catch (err) {
+        alert('Upload failed: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>

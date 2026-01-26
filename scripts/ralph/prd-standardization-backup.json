@@ -1,0 +1,231 @@
+{
+  "project": "Candidate Standardization Pipeline",
+  "branchName": "ralph/candidate-standardization",
+  "description": "Build a pipeline for uploading raw candidate CSVs from multiple sources, mapping fields to a standardized schema, reviewing/exporting standardized data, and approving batches for AI filtering test runs.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Database Schema for Candidate Batches",
+      "description": "As a developer, I need database tables to store uploaded candidate batches and standardized data.",
+      "acceptanceCriteria": [
+        "candidate_batches table created with columns: id (UUID), role_id, name (user-editable), status (pending/mapping/standardizing/standardized/approved), created_at, approved_at",
+        "raw_candidates table created with columns: id, batch_id, role_id, first_name, last_name, full_name, linkedin_url, location, current_company, current_title, raw_data (JSON), standardized_data (JSON), status (pending/standardized/duplicate), created_at",
+        "batch_file_uploads table created with columns: id, batch_id, filename, uploaded_at, row_count, headers (JSON)",
+        "Foreign key batch_id references candidate_batches(id) in raw_candidates and batch_file_uploads",
+        "Foreign key role_id references roles(id) in candidate_batches and raw_candidates",
+        "Index created on raw_candidates.linkedin_url for deduplication queries",
+        "Index created on raw_candidates.batch_id and candidate_batches.role_id",
+        "Run python3 database/migrate.py --sql <schema-file> without errors",
+        "Query SELECT * FROM candidate_batches LIMIT 1 returns empty result (no errors)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Multi-CSV Upload Backend",
+      "description": "As a recruiter, I need to upload multiple CSVs at once to start a standardization batch.",
+      "acceptanceCriteria": [
+        "API endpoint created: POST /api/roles/:role_id/batches/upload",
+        "Endpoint accepts multiple files via multipart/form-data",
+        "Creates new batch record in candidate_batches with status='pending', auto-generated name 'Batch YYYY-MM-DD HH:MM'",
+        "Saves each CSV file to uploads/batches/{batch_id}/ directory",
+        "Parses CSV headers from each file and stores in batch_file_uploads.headers (JSON array)",
+        "Tracks file metadata: filename, row_count, uploaded_at",
+        "Returns JSON response: {batch_id, role_id, files: [{filename, row_count, headers}], total_rows}",
+        "Returns 400 error if no files uploaded or files are not CSV format",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003A",
+      "title": "Field Mapping Backend + AI Suggestions",
+      "description": "As a developer, I need an API that returns field mapping suggestions using AI.",
+      "acceptanceCriteria": [
+        "API endpoint created: POST /api/batches/:batch_id/suggest-mappings",
+        "Reads all CSV headers from batch_file_uploads for the batch",
+        "Sends headers to Claude with prompt: Map these CSV columns to: first_name, last_name, full_name, linkedin_url, location, current_company, current_title. Return JSON mapping.",
+        "Parses Claude response into mapping object: {source_column: target_field}",
+        "Returns JSON: {batch_id, files: [{filename, headers, suggested_mappings}], standardized_fields: [...]}",
+        "Returns 404 if batch not found",
+        "Returns 500 with error message if AI call fails",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003B",
+      "title": "Field Mapping UI",
+      "description": "As a recruiter, I want to map CSV columns to standardized fields so data goes in the right places.",
+      "acceptanceCriteria": [
+        "Page created at /roles/:role_id/batches/:batch_id/map",
+        "Left panel lists all source columns grouped by filename",
+        "Right panel shows standardized fields: first_name, last_name, full_name, linkedin_url, location, current_company, current_title",
+        "Each source column has dropdown to select target field (or Skip)",
+        "On page load, calls /api/batches/:batch_id/suggest-mappings and pre-fills dropdowns with AI suggestions",
+        "Apply Mappings button enabled only when linkedin_url is mapped",
+        "Clicking Apply Mappings sends mapping object to POST /api/batches/:batch_id/apply-mappings and redirects to review page",
+        "Shows validation error if linkedin_url not mapped",
+        "Progress timeline shows Map Fields as active step",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Standardization Processing Backend",
+      "description": "As a system, I need to apply field mappings, extract/deduplicate candidates, and store standardized data.",
+      "acceptanceCriteria": [
+        "API endpoint created: POST /api/batches/:batch_id/apply-mappings (accepts mapping JSON)",
+        "Reads all CSV files for the batch",
+        "Applies user-confirmed mappings to extract candidate data",
+        "If full_name mapped but not first_name/last_name, splits name (first word = first_name, rest = last_name)",
+        "Deduplicates candidates by linkedin_url (case-insensitive), keeps first occurrence",
+        "Inserts standardized candidates into raw_candidates with status='standardized'",
+        "Inserts duplicates with status='duplicate'",
+        "Updates batch status to 'standardized'",
+        "Returns JSON: {batch_id, total_uploaded, deduplicated_count, final_count}",
+        "Returns 400 if mappings invalid (linkedin_url missing)",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005A",
+      "title": "Review Data API",
+      "description": "As a developer, I need an API to fetch raw and standardized candidate data for review.",
+      "acceptanceCriteria": [
+        "API endpoint created: GET /api/batches/:batch_id/candidates",
+        "Query param view: raw | standardized | comparison (default: standardized)",
+        "Returns array of candidates with fields based on view: raw returns raw_data JSON, standardized returns first_name/last_name/full_name/linkedin_url/location/current_company/current_title, comparison returns both",
+        "Excludes candidates with status='duplicate'",
+        "Returns batch metadata: total_uploaded, deduplicated_count, final_count, file_count",
+        "Returns 404 if batch not found",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005B",
+      "title": "Review UI (Raw/Standardized/Comparison Tabs)",
+      "description": "As a recruiter, I want to review standardized data before approval.",
+      "acceptanceCriteria": [
+        "Page created at /roles/:role_id/batches/:batch_id/review",
+        "Top bar shows: batch name (editable), file count, total uploaded, deduplicated count, final count",
+        "Three tabs: Raw Data, Standardized Data, Comparison",
+        "Raw Data tab: table showing all original CSV columns for each candidate",
+        "Standardized Data tab: table showing first_name, last_name, linkedin_url, location, current_company, current_title",
+        "Comparison tab: split view with raw (left) and standardized (right) side-by-side",
+        "Top right buttons: Export CSV, Approve Batch",
+        "Clicking tab switches view and calls /api/batches/:batch_id/candidates?view=<tab>",
+        "Progress timeline shows Review as active step",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Export Standardized Data",
+      "description": "As a recruiter, I want to export standardized data as CSV before or after approval.",
+      "acceptanceCriteria": [
+        "API endpoint created: GET /api/batches/:batch_id/export",
+        "Returns CSV with columns: first_name, last_name, full_name, linkedin_url, location, current_company, current_title",
+        "CSV includes only candidates with status='standardized' (excludes duplicates)",
+        "Response headers set: Content-Type: text/csv, Content-Disposition: attachment; filename=standardized_{role-name}_{date}.csv",
+        "Export button on review page triggers download by opening /api/batches/:batch_id/export in new window",
+        "Works before and after batch approval",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Approve Batch & Integrate with Test Run Flow",
+      "description": "As a recruiter, I want to approve a batch so it's ready for AI filtering test runs.",
+      "acceptanceCriteria": [
+        "API endpoint created: POST /api/batches/:batch_id/approve",
+        "Updates batch status to 'approved', sets approved_at timestamp",
+        "Returns success JSON: {batch_id, status: 'approved', approved_at}",
+        "Approve button on review page calls endpoint and shows success message",
+        "After approval, redirects to /roles/:role_id/batches/:batch_id/test-run (test run setup page)",
+        "Test run setup page shows batch info: name, candidate count, files",
+        "Modify existing test run API (POST /api/roles/:role_id/test-runs) to accept batch_id parameter",
+        "Test run endpoint pulls random 50 candidates from raw_candidates WHERE batch_id=X AND status='standardized'",
+        "Progress timeline shows Approve step completed, Test Run active",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Connects to existing test run flow from ralph/ai-filtering PRD"
+    },
+    {
+      "id": "US-008",
+      "title": "Deduplication Report",
+      "description": "As a recruiter, I want to see which candidates were deduplicated and optionally export them.",
+      "acceptanceCriteria": [
+        "Review page shows deduplication summary: X duplicates removed by LinkedIn URL",
+        "View Duplicates link shows modal/page with list of duplicate candidates (linkedin_url, name)",
+        "Optional: Export Duplicates button downloads CSV of removed candidates",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Optional - can be deferred if time-constrained"
+    },
+    {
+      "id": "US-009",
+      "title": "Progress Timeline Stepper Component",
+      "description": "As a recruiter, I want to see a visual progress timeline so I know where I am in the workflow.",
+      "acceptanceCriteria": [
+        "Create reusable stepper component in webapp/templates/components/ or webapp/static/",
+        "Steps defined: Upload \u2192 Map Fields \u2192 Standardize \u2192 Review \u2192 Approve \u2192 Test Run \u2192 Filter \u2192 Results",
+        "Component accepts currentStep prop and highlights active step",
+        "Completed steps show checkmark icon",
+        "Future steps grayed out",
+        "Rendered on: upload page, mapping page, review page, test run page, results page",
+        "Clicking completed steps navigates back (if URL exists for that step)",
+        "Stepper updates automatically based on batch status from backend",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Run History & Management",
+      "description": "As a recruiter, I want to see all prior batches for a role and revisit them.",
+      "acceptanceCriteria": [
+        "Page created at /roles/:role_id/runs (or section on role detail page)",
+        "API endpoint created: GET /api/roles/:role_id/batches",
+        "Returns list of all batches for role with: id, name, status, created_at, approved_at, file_count, candidate_count",
+        "Page shows table of batches sorted by created_at (newest first)",
+        "Each batch row shows: name (editable inline), date, status badge, candidate count",
+        "Click batch name opens review page for that batch",
+        "API endpoint created: PATCH /api/batches/:batch_id (accepts {name: string} to rename batch)",
+        "Inline edit triggers PATCH request and updates batch name",
+        "Progress timeline integrated on each batch detail page",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

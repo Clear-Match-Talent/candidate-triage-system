@@ -11,6 +11,7 @@ const dedupSummaryText = document.getElementById('dedup-summary-text');
 const viewDuplicatesLink = document.getElementById('view-duplicates');
 const tableContainer = document.getElementById('table-container');
 const exportBtn = document.getElementById('export-btn');
+const exportDuplicatesBtn = document.getElementById('export-duplicates-btn');
 const approveBtn = document.getElementById('approve-btn');
 const approveMessage = document.getElementById('approve-message');
 
@@ -19,12 +20,13 @@ const tabs = Array.from(document.querySelectorAll('.tab'));
 const STANDARDIZED_FIELDS = [
   'first_name',
   'last_name',
-  'full_name',
   'linkedin_url',
   'location',
   'current_company',
   'current_title',
 ];
+
+let currentCustomFields = [];
 
 const toTitle = (value) => value.replace(/_/g, ' ');
 
@@ -94,9 +96,10 @@ const getRawColumns = (candidates) => {
   return columns;
 };
 
-const renderStandardized = (candidates) => {
+const renderStandardized = (candidates, customFields = []) => {
+  const columns = [...STANDARDIZED_FIELDS, ...customFields];
   const table = buildTable(
-    STANDARDIZED_FIELDS,
+    columns,
     candidates,
     (row, column) => row?.[column]
   );
@@ -119,10 +122,11 @@ const renderRaw = (candidates) => {
   tableContainer.appendChild(table);
 };
 
-const renderComparison = (candidates) => {
+const renderComparison = (candidates, customFields = []) => {
   const columns = getRawColumns(candidates);
   const container = document.createElement('div');
   container.className = 'split-view';
+  const standardizedColumns = [...STANDARDIZED_FIELDS, ...customFields];
 
   const rawCard = document.createElement('div');
   rawCard.className = 'split-card';
@@ -149,7 +153,7 @@ const renderComparison = (candidates) => {
   standardTitle.textContent = 'Standardized Data';
   standardizedCard.appendChild(standardTitle);
   standardizedCard.appendChild(
-    buildTable(STANDARDIZED_FIELDS, candidates, (row, column) => row?.[column])
+    buildTable(standardizedColumns, candidates, (row, column) => row?.[column])
   );
 
   container.appendChild(rawCard);
@@ -198,6 +202,7 @@ const fetchCandidates = async (view) => {
     updateMetrics(payload);
 
     const candidates = payload.candidates || [];
+    currentCustomFields = payload.custom_fields || [];
     if (!candidates.length) {
       renderEmptyState('No candidates found for this batch.');
       return;
@@ -206,9 +211,9 @@ const fetchCandidates = async (view) => {
     if (view === 'raw') {
       renderRaw(candidates);
     } else if (view === 'comparison') {
-      renderComparison(candidates);
+      renderComparison(candidates, currentCustomFields);
     } else {
-      renderStandardized(candidates);
+      renderStandardized(candidates, currentCustomFields);
     }
   } catch (error) {
     renderEmptyState('Unable to load candidate data.');
@@ -235,6 +240,10 @@ tabs.forEach((tab) => {
 
 if (exportBtn && batchId) {
   exportBtn.href = `/api/batches/${batchId}/export`;
+}
+
+if (exportDuplicatesBtn && batchId) {
+  exportDuplicatesBtn.href = `/api/batches/${batchId}/duplicates/export`;
 }
 
 if (approveBtn && batchId && roleId) {

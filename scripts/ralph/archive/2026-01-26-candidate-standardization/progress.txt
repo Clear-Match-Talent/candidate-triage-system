@@ -1,0 +1,139 @@
+# Ralph Progress Log
+Started: Mon Jan 26 07:24:00 UTC 2026
+---
+## Codebase Patterns
+- Database schema lives in `database/schema.sql` and is applied via `python3 database/migrate.py --sql <file>`.
+- Batch uploads are stored under `uploads/batches/{batch_id}` with metadata saved via `webapp.db.create_candidate_batch` and `webapp.db.insert_batch_file_upload`.
+- Workflow stepper UI uses `webapp/templates/components/stepper.html` with shared styles in `webapp/static/stepper.css` and `build_stepper_context` in `webapp/main.py`.
+## 2026-01-26 07:26:53 UTC - US-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added candidate batch tables and indexes to the SQLite schema and added a migration script to apply schema SQL.
+- Files changed: `database/schema.sql`, `database/migrate.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - Schema updates are applied to `data.db` with `python3 database/migrate.py --sql database/schema.sql`.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Candidate batch tables live alongside core AI filtering tables in `database/schema.sql`.
+---
+## 2026-01-26 07:30:51 UTC - US-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added multi-CSV batch upload API, saving files under uploads/batches/{batch_id}, capturing headers/row counts, and persisting batch/file metadata in data.db.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - Batch uploads use `uploads/batches/{batch_id}` with metadata stored via `webapp.db.create_candidate_batch` and `webapp.db.insert_batch_file_upload`.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Upload endpoint validates CSV extensions and stores parsed headers in `batch_file_uploads.headers`.
+---
+## 2026-01-26 07:33:15 UTC - US-003A
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added suggest-mappings API that reads batch upload headers, calls Claude for field mapping suggestions, and returns per-file mappings.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Suggest-mappings uses `batch_file_uploads.headers` and calls Claude per file.
+---
+## 2026-01-26 07:36:29 UTC - US-003B
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added mapping page route, template, styles, and client-side logic to load AI suggestions, prefill mappings, validate linkedin_url, and submit mappings.
+- Files changed: `webapp/main.py`, `webapp/templates/map.html`, `webapp/static/map.css`, `webapp/static/map.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Mapping UI fetches suggestions from `/api/batches/:batch_id/suggest-mappings` and posts selections to `/api/batches/:batch_id/apply-mappings`.
+---
+## 2026-01-26 07:39:29 UTC - US-004
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added apply-mappings API to read batch CSVs, apply user mappings, split full_name when needed, deduplicate by linkedin_url, insert raw_candidates, and update batch status.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Apply-mappings reads CSVs from `uploads/batches/{batch_id}` and persists rows in `raw_candidates`.
+---
+## 2026-01-26 07:41:59 UTC - US-005A
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added batch candidates review API with view-based payloads and batch metrics.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Review API pulls batch metrics from `batch_file_uploads` and `raw_candidates` and excludes duplicates.
+---
+## 2026-01-26 07:45:39 UTC - US-005B
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added review page template, styles, and client-side tabbed table rendering for raw/standardized/comparison views with batch metrics and action buttons. Added review route and included batch metadata in candidates API response.
+- Files changed: `webapp/main.py`, `webapp/templates/review.html`, `webapp/static/review.css`, `webapp/static/review.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Review UI consumes `/api/batches/:batch_id/candidates` for both table data and summary metrics.
+---
+## 2026-01-26 07:47:53 UTC - US-006
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added CSV export endpoint for standardized batch candidates with role-based filename and wired to review page download.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Batch export pulls standardized candidates from `raw_candidates` with status='standardized'.
+---
+## 2026-01-26 08:13:31 UTC - US-007
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added batch approval API, test run setup page and client flow, and wired test run creation to sample standardized candidates from approved batches.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `webapp/templates/test_run.html`, `webapp/static/test_run.css`, `webapp/static/test_run.js`, `webapp/templates/review.html`, `webapp/static/review.js`, `webapp/static/review.css`, `scripts/ralph/ralph.sh`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Test run setup lives at `/roles/:role_id/batches/:batch_id/test-run` and uses `/api/roles/:role_id/test-runs` with `batch_id` to sample standardized candidates.
+---
+## 2026-01-26 08:18:46 UTC - US-008
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added duplicates API/export endpoints and a duplicates review page linked from the review summary, including CSV export and table rendering.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `webapp/templates/review.html`, `webapp/static/review.css`, `webapp/static/review.js`, `webapp/templates/duplicates.html`, `webapp/static/duplicates.css`, `webapp/static/duplicates.js`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Duplicate candidates are exposed via `/api/batches/:batch_id/duplicates` and exported from `/api/batches/:batch_id/duplicates/export`.
+---
+## 2026-01-26 08:37:10 UTC - US-009
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added reusable stepper component and shared styles, wired batch-status-driven stepper context into batch pages and added stepper display to upload/results views.
+- Files changed: `webapp/main.py`, `webapp/templates/components/stepper.html`, `webapp/templates/map.html`, `webapp/templates/review.html`, `webapp/templates/test_run.html`, `webapp/templates/duplicates.html`, `webapp/templates/index.html`, `webapp/templates/run.html`, `webapp/static/stepper.css`, `webapp/static/map.css`, `webapp/static/review.css`, `webapp/static/test_run.css`, `webapp/static/duplicates.css`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - Use `build_stepper_context` in `webapp/main.py` to drive the shared workflow stepper UI.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Stepper template lives at `webapp/templates/components/stepper.html` with shared CSS in `webapp/static/stepper.css`.
+---

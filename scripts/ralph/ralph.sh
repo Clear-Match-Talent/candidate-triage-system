@@ -31,9 +31,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Validate tool choice
+# Validate tool choice - "codex" is alias for "amp" (both use Codex CLI)
+if [[ "$TOOL" == "codex" ]]; then
+  TOOL="amp"
+fi
 if [[ "$TOOL" != "amp" && "$TOOL" != "claude" ]]; then
-  echo "Error: Invalid tool '$TOOL'. Must be 'amp' or 'claude'."
+  echo "Error: Invalid tool '$TOOL'. Must be 'amp', 'codex', or 'claude'."
   exit 1
 fi
 

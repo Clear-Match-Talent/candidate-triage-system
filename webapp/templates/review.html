@@ -26,7 +26,7 @@
     <section class="summary">
       <div class="summary-main">
         <label for="batch-name">Batch name</label>
-        <input id="batch-name" type="text" placeholder="Batch" />
+        <input id="batch-name" type="text" placeholder="Batch" readonly />
       </div>
       <div class="summary-metrics">
         <div class="metric-grid">
@@ -54,6 +54,7 @@
       </div>
       <div class="summary-actions">
         <a class="btn ghost" id="export-btn" href="#" target="_blank">Export CSV</a>
+        <a class="btn ghost" id="export-duplicates-btn" href="#" target="_blank">Export Duplicates</a>
         <button class="btn" id="approve-btn" type="button">Approve Batch</button>
         <div class="approve-message" id="approve-message" role="status"></div>
       </div>

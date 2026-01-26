@@ -53,7 +53,7 @@
         "FAIL: Apply Mappings fails silently"
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "fileHints": ["webapp/templates/map.html", "webapp/static/map.js", "webapp/static/map.css", "webapp/main.py"]
     },
     {
@@ -80,7 +80,7 @@
         "FAIL: Custom fields not saved"
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "fileHints": ["webapp/main.py lines 637-720", "webapp/db.py"]
     },
     {
@@ -106,7 +106,7 @@
         "FAIL: Export doesn't work"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "fileHints": ["webapp/templates/review.html", "webapp/static/review.js", "webapp/main.py"]
     },
     {
