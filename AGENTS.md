@@ -170,6 +170,11 @@ Start test runs with `POST /api/batches/{batch_id}/test-run` and poll progress/r
 via `GET /api/test-runs/{test_run_id}`. Lock criteria after approval with
 `POST /api/roles/{role_id}/criteria/{criteria_id}/lock`.
 
+### Full Runs
+Full filtering runs are stored in `filter_runs`/`filter_results`. The batch ID is
+saved in `filter_runs.input_csv_path` (batch name in `input_csv_filename`) so the
+latest run for a batch can be retrieved.
+
 ### LLM Calls
 ```python
 # Always set API key from environment

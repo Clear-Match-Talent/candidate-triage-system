@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Filtering Results - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/stepper.css" />
+  <link rel="stylesheet" href="/static/results.css" />
+</head>
+<body>
+  <div
+    class="page"
+    data-role-id="{{ role_id }}"
+    data-batch-id="{{ batch_id }}"
+    data-run-id="{{ run_id }}"
+  >
+    <header class="page-header">
+      <div>
+        <p class="kicker">Candidate Filtering</p>
+        <h1>Results</h1>
+        <p class="subtitle">Review outcomes and export filtered candidates.</p>
+      </div>
+      <div class="batch-chip">
+        <span>Batch</span>
+        <strong>{{ batch_id }}</strong>
+      </div>
+    </header>
+
+    {% include "components/stepper.html" %}
+
+    <section class="summary">
+      <div class="summary-main">
+        <span class="label">Role</span>
+        <strong>{{ role_name or "Role" }}</strong>
+        <span class="status">Batch: {{ batch_name or "Batch" }}</span>
+      </div>
+    </section>
+
+    <section class="summary-bar" id="summary-bar">
+      <button class="summary-card proceed" data-filter="Proceed" type="button">
+        <span>Proceed</span>
+        <strong id="summary-proceed">0</strong>
+      </button>
+      <button class="summary-card review" data-filter="Human Review" type="button">
+        <span>Human Review</span>
+        <strong id="summary-review">0</strong>
+      </button>
+      <button class="summary-card dismiss" data-filter="Dismiss" type="button">
+        <span>Dismiss</span>
+        <strong id="summary-dismiss">0</strong>
+      </button>
+      <button class="summary-card unable" data-filter="Unable to Enrich" type="button">
+        <span>Unable to Enrich</span>
+        <strong id="summary-unable">0</strong>
+      </button>
+    </section>
+
+    <section class="results-card">
+      <div class="results-header">
+        <h2>Candidate Results</h2>
+        <div class="results-actions">
+          <label>
+            Filter:
+            <select id="bucket-filter">
+              <option value="All">All</option>
+              <option value="Proceed">Proceed</option>
+              <option value="Human Review">Human Review</option>
+              <option value="Dismiss">Dismiss</option>
+              <option value="Unable to Enrich">Unable to Enrich</option>
+            </select>
+          </label>
+          <button class="btn secondary" data-export="All" type="button">
+            Export All
+          </button>
+          <button class="btn secondary" data-export="Proceed" type="button">
+            Export Proceed
+          </button>
+          <button class="btn secondary" data-export="Human Review" type="button">
+            Export Human Review
+          </button>
+          <button class="btn secondary" data-export="Dismiss" type="button">
+            Export Dismiss
+          </button>
+        </div>
+      </div>
+
+      <div class="table-wrapper" id="results-wrapper">
+        <table class="results-table" id="results-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>LinkedIn</th>
+              <th>Location</th>
+              <th>Company</th>
+              <th>Title</th>
+              <th>Bucket</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+        <div class="empty-state" id="results-empty">
+          No results yet. Start a full run to see outcomes.
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/results.js"></script>
+</body>
+</html>

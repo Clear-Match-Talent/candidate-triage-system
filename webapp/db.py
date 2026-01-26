@@ -690,6 +690,355 @@ def list_candidates_by_ids(candidate_ids: List[str]) -> List[Dict[str, Any]]:
     return candidates
 
 
+def list_standardized_candidates_for_batch(
+    batch_id: str,
+    limit: Optional[int] = None,
+    randomize: bool = False,
+) -> List[Dict[str, Any]]:
+    """Fetch standardized candidates for a batch with parsed JSON payloads."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    order_clause = "ORDER BY RANDOM()" if randomize else "ORDER BY created_at ASC"
+    params: List[Any] = [batch_id]
+    limit_clause = ""
+    if limit is not None:
+        limit_clause = "LIMIT ?"
+        params.append(limit)
+    try:
+        cursor.execute(
+            f"""
+            SELECT
+                id,
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                location,
+                current_company,
+                current_title,
+                raw_data,
+                standardized_data
+            FROM raw_candidates
+            WHERE batch_id = ? AND status = 'standardized'
+            {order_clause}
+            {limit_clause}
+            """,
+            tuple(params),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        raw_data = None
+        if row["raw_data"]:
+            try:
+                raw_data = json.loads(row["raw_data"])
+            except json.JSONDecodeError:
+                raw_data = None
+        standardized_data = None
+        if row["standardized_data"]:
+            try:
+                standardized_data = json.loads(row["standardized_data"])
+            except json.JSONDecodeError:
+                standardized_data = None
+        candidates.append(
+            {
+                "id": row["id"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "full_name": row["full_name"],
+                "linkedin_url": row["linkedin_url"],
+                "location": row["location"],
+                "current_company": row["current_company"],
+                "current_title": row["current_title"],
+                "raw_data": raw_data,
+                "standardized_data": standardized_data,
+            }
+        )
+    return candidates
+
+
+def create_filter_run(
+    role_id: str,
+    criteria_version_id: str,
+    run_type: str,
+    batch_id: Optional[str],
+    batch_name: Optional[str],
+    total_candidates: int,
+) -> str:
+    """Create a filter run record and return its ID."""
+    run_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO filter_runs (
+                id,
+                role_id,
+                criteria_version_id,
+                run_type,
+                input_csv_filename,
+                input_csv_path,
+                total_candidates
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                role_id,
+                criteria_version_id,
+                run_type,
+                batch_name,
+                batch_id,
+                total_candidates,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to create filter run role_id=%s", role_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return run_id
+
+
+def update_filter_run_progress(
+    run_id: str,
+    current_candidate: int,
+    bucket_counts: Dict[str, int],
+) -> None:
+    """Update run progress counters."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE filter_runs
+            SET
+                current_candidate = ?,
+                proceed_count = ?,
+                review_count = ?,
+                dismiss_count = ?,
+                unable_to_enrich_count = ?
+            WHERE id = ?
+            """,
+            (
+                current_candidate,
+                bucket_counts.get("Proceed", 0),
+                bucket_counts.get("Human Review", 0),
+                bucket_counts.get("Dismiss", 0),
+                bucket_counts.get("Unable to Enrich", 0),
+                run_id,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to update filter run progress run_id=%s", run_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def complete_filter_run(run_id: str, status: str) -> None:
+    """Mark a filter run as completed or failed."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE filter_runs
+            SET status = ?, completed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (status, run_id),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to complete filter run run_id=%s", run_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def get_filter_run(run_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a filter run by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM filter_runs WHERE id = ?", (run_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def get_latest_filter_run_for_batch(
+    role_id: str, batch_id: str
+) -> Optional[Dict[str, Any]]:
+    """Fetch the most recent filter run for a role + batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT *
+            FROM filter_runs
+            WHERE role_id = ? AND input_csv_path = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (role_id, batch_id),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def list_filter_results(run_id: str) -> List[Dict[str, Any]]:
+    """List filter results with parsed evaluations and candidate fields."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                fr.id,
+                fr.candidate_id,
+                fr.candidate_name,
+                fr.candidate_email,
+                fr.candidate_linkedin,
+                fr.criteria_evaluations,
+                fr.final_determination,
+                fr.created_at,
+                rc.first_name,
+                rc.last_name,
+                rc.full_name,
+                rc.linkedin_url AS rc_linkedin_url,
+                rc.location,
+                rc.current_company,
+                rc.current_title,
+                rc.raw_data,
+                rc.standardized_data
+            FROM filter_results fr
+            LEFT JOIN raw_candidates rc ON rc.id = fr.candidate_id
+            WHERE fr.run_id = ?
+            ORDER BY fr.created_at ASC
+            """,
+            (run_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    results: List[Dict[str, Any]] = []
+    for row in rows:
+        evaluations = {}
+        if row["criteria_evaluations"]:
+            try:
+                evaluations = json.loads(row["criteria_evaluations"])
+            except json.JSONDecodeError:
+                evaluations = {}
+        raw_data = None
+        if row["raw_data"]:
+            try:
+                raw_data = json.loads(row["raw_data"])
+            except json.JSONDecodeError:
+                raw_data = None
+        standardized_data = None
+        if row["standardized_data"]:
+            try:
+                standardized_data = json.loads(row["standardized_data"])
+            except json.JSONDecodeError:
+                standardized_data = None
+        results.append(
+            {
+                "id": row["id"],
+                "candidate_id": row["candidate_id"],
+                "candidate_name": row["candidate_name"],
+                "candidate_email": row["candidate_email"],
+                "candidate_linkedin": row["candidate_linkedin"]
+                or row["rc_linkedin_url"],
+                "criteria_evaluations": evaluations,
+                "final_bucket": row["final_determination"],
+                "created_at": row["created_at"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "full_name": row["full_name"],
+                "linkedin_url": row["rc_linkedin_url"],
+                "location": row["location"],
+                "current_company": row["current_company"],
+                "current_title": row["current_title"],
+                "raw_data": raw_data,
+                "standardized_data": standardized_data,
+            }
+        )
+    return results
+
+
+def insert_filter_result(
+    run_id: str,
+    candidate_id: str,
+    candidate_name: str,
+    candidate_email: Optional[str],
+    candidate_linkedin: Optional[str],
+    criteria_evaluations: Dict[str, Any],
+    final_determination: str,
+) -> str:
+    """Insert a filter run result row."""
+    result_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO filter_results (
+                id,
+                run_id,
+                candidate_id,
+                candidate_name,
+                candidate_email,
+                candidate_linkedin,
+                criteria_evaluations,
+                final_determination
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                result_id,
+                run_id,
+                candidate_id,
+                candidate_name,
+                candidate_email,
+                candidate_linkedin,
+                json.dumps(criteria_evaluations),
+                final_determination,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception(
+            "Failed to insert filter result run_id=%s candidate_id=%s",
+            run_id,
+            candidate_id,
+        )
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return result_id
+
+
 def get_batch_metrics(batch_id: str) -> Dict[str, int]:
     """Return aggregate metrics for a batch."""
     conn = get_data_connection()

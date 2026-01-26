@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Run Filtering - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/stepper.css" />
+  <link rel="stylesheet" href="/static/run_full.css" />
+</head>
+<body>
+  <div
+    class="page"
+    data-role-id="{{ role_id }}"
+    data-batch-id="{{ batch_id }}"
+    data-candidate-count="{{ final_count }}"
+    data-criteria-version="{{ criteria.version if criteria else '' }}"
+  >
+    <header class="page-header">
+      <div>
+        <p class="kicker">Candidate Filtering</p>
+        <h1>Run Full Evaluation</h1>
+        <p class="subtitle">Choose a full or subset run and start filtering.</p>
+      </div>
+      <div class="batch-chip">
+        <span>Batch</span>
+        <strong>{{ batch_id }}</strong>
+      </div>
+    </header>
+
+    {% include "components/stepper.html" %}
+
+    <section class="summary">
+      <div class="summary-main">
+        <span class="label">Role</span>
+        <strong>{{ role_name or "Role" }}</strong>
+        <span class="status">Batch: {{ batch_name or "Batch" }}</span>
+        <span class="status">Status: {{ batch_status or "standardized" }}</span>
+      </div>
+      <div class="summary-metrics">
+        <div class="metric">
+          <span class="metric-label">Criteria version</span>
+          <strong>
+            {% if criteria %}
+              v{{ criteria.version }}
+            {% else %}
+              —
+            {% endif %}
+          </strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Candidates</span>
+          <strong id="candidate-total">{{ final_count }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="run-card">
+      <div class="run-options">
+        <label class="option">
+          <input type="radio" name="run-scope" value="all" checked />
+          Run on all {{ final_count }} candidates
+        </label>
+        <label class="option">
+          <input type="radio" name="run-scope" value="subset" />
+          Run on subset:
+          <input
+            type="number"
+            id="subset-count"
+            min="1"
+            max="{{ final_count }}"
+            placeholder="50"
+          />
+          candidates
+        </label>
+      </div>
+      <div class="run-actions">
+        <button class="btn" id="start-full-run" type="button">
+          Start Filtering
+        </button>
+        <div class="message" id="run-message" role="status"></div>
+        <div class="progress" id="run-progress" role="status"></div>
+      </div>
+    </section>
+
+    <section class="note-card">
+      <h2>What happens next</h2>
+      <p>
+        The AI will evaluate each candidate against your criteria and bucket the
+        results. You can leave this page and return later; progress is saved.
+      </p>
+    </section>
+  </div>
+
+  <script src="/static/run_full.js"></script>
+</body>
+</html>

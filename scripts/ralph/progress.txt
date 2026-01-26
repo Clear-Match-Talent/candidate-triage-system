@@ -7,6 +7,7 @@ Started: Mon Jan 26 09:29:51 UTC 2026
 - Role documents are stored under `uploads/roles/{role_id}` and tracked in `role_documents` via `/api/roles/{role_id}/documents`.
 - Role criteria versions live in `role_criteria` with `/api/roles/{role_id}/criteria` for latest/create and `/api/roles/{role_id}/criteria/history` for version history.
 - Test runs start at `POST /api/batches/{batch_id}/test-run` and are polled via `GET /api/test-runs/{test_run_id}`.
+- Full runs use `filter_runs`/`filter_results` with batch ID stored in `filter_runs.input_csv_path` for lookup.
 ---
 ## 2026-01-26 09:37:48 UTC - FIX-001
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
@@ -174,4 +175,29 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     - Test runs require at least 50 standardized candidates; return a clear 400 if fewer are available
   - Useful context (e.g., "the evaluation panel is in component X")
     - Test run results render criteria columns from the criteria version data and allow row expansion for reasoning
+---
+## 2026-01-26 12:38:29 UTC - ADD-005
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented
+- Added full run start endpoint with background evaluation, progress tracking in filter_runs, and results storage in filter_results
+- Built full run and results pages with polling, summary cards, expandable reasoning, filtering, and CSV exports
+- Files changed
+- AGENTS.md
+- scripts/ralph/prd.json
+- scripts/ralph/progress.txt
+- webapp/db.py
+- webapp/main.py
+- webapp/static/run_full.css
+- webapp/static/run_full.js
+- webapp/static/results.css
+- webapp/static/results.js
+- webapp/templates/run_full.html
+- webapp/templates/results.html
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - Filter runs store batch metadata in filter_runs (batch_id in input_csv_path, batch name in input_csv_filename)
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - Remember to run `python3 database/migrate.py --sql database/schema.sql` to keep data.db aligned with schema changes
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Full run progress is polled via `/api/filter-runs/{run_id}` and results export via `/api/filter-runs/{run_id}/export`
 ---

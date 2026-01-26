@@ -4,7 +4,7 @@
   "description": "Fix broken functionality and add missing features. DO NOT rebuild working components. Human-driven workflow with AI assistance.",
   "learningInstructions": {
     "progressFile": "scripts/ralph/progress.txt",
-    "agentsFile": "AGENTS.md", 
+    "agentsFile": "AGENTS.md",
     "rules": [
       "After EVERY story completion, append learnings to progress.txt",
       "If you discover a pattern or gotcha, update AGENTS.md",
@@ -54,7 +54,12 @@
       ],
       "priority": 1,
       "passes": true,
-      "fileHints": ["webapp/templates/map.html", "webapp/static/map.js", "webapp/static/map.css", "webapp/main.py"]
+      "fileHints": [
+        "webapp/templates/map.html",
+        "webapp/static/map.js",
+        "webapp/static/map.css",
+        "webapp/main.py"
+      ]
     },
     {
       "id": "FIX-002",
@@ -81,7 +86,10 @@
       ],
       "priority": 2,
       "passes": true,
-      "fileHints": ["webapp/main.py lines 637-720", "webapp/db.py"]
+      "fileHints": [
+        "webapp/main.py lines 637-720",
+        "webapp/db.py"
+      ]
     },
     {
       "id": "FIX-003",
@@ -107,7 +115,11 @@
       ],
       "priority": 3,
       "passes": true,
-      "fileHints": ["webapp/templates/review.html", "webapp/static/review.js", "webapp/main.py"]
+      "fileHints": [
+        "webapp/templates/review.html",
+        "webapp/static/review.js",
+        "webapp/main.py"
+      ]
     },
     {
       "id": "ADD-001",
@@ -136,7 +148,12 @@
       ],
       "priority": 4,
       "passes": true,
-      "fileHints": ["webapp/templates/role.html", "webapp/main.py", "webapp/db.py", "database/schema.sql"]
+      "fileHints": [
+        "webapp/templates/role.html",
+        "webapp/main.py",
+        "webapp/db.py",
+        "database/schema.sql"
+      ]
     },
     {
       "id": "ADD-002",
@@ -167,7 +184,12 @@
       ],
       "priority": 5,
       "passes": true,
-      "fileHints": ["webapp/templates/role.html", "webapp/main.py", "webapp/db.py", "database/schema.sql"]
+      "fileHints": [
+        "webapp/templates/role.html",
+        "webapp/main.py",
+        "webapp/db.py",
+        "database/schema.sql"
+      ]
     },
     {
       "id": "ADD-003",
@@ -195,7 +217,11 @@
       ],
       "priority": 6,
       "passes": true,
-      "fileHints": ["webapp/main.py", "webapp/templates/role.html", "requirements.txt"]
+      "fileHints": [
+        "webapp/main.py",
+        "webapp/templates/role.html",
+        "requirements.txt"
+      ]
     },
     {
       "id": "ADD-004",
@@ -233,7 +259,11 @@
       ],
       "priority": 7,
       "passes": true,
-      "fileHints": ["webapp/main.py", "webapp/templates/test_run.html", "filtering/evaluator.py (CREATE)"]
+      "fileHints": [
+        "webapp/main.py",
+        "webapp/templates/test_run.html",
+        "filtering/evaluator.py (CREATE)"
+      ]
     },
     {
       "id": "ADD-005",
@@ -265,8 +295,12 @@
         "FAIL: Export missing criteria/reasoning columns"
       ],
       "priority": 8,
-      "passes": false,
-      "fileHints": ["webapp/main.py", "webapp/templates/run.html", "webapp/templates/results.html (CREATE)"]
+      "passes": true,
+      "fileHints": [
+        "webapp/main.py",
+        "webapp/templates/run.html",
+        "webapp/templates/results.html (CREATE)"
+      ]
     },
     {
       "id": "ADD-006",
@@ -298,7 +332,10 @@
       ],
       "priority": 9,
       "passes": false,
-      "fileHints": ["webapp/static/*.css", "webapp/templates/*.html"]
+      "fileHints": [
+        "webapp/static/*.css",
+        "webapp/templates/*.html"
+      ]
     }
   ]
 }

@@ -88,6 +88,8 @@ STEPPER_URL_BUILDERS = {
     "map": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/map",
     "review": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/review",
     "test_run": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/test-run",
+    "filter": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/run",
+    "results": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/results",
 }
 
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1408,6 +1410,24 @@ def _criteria_columns(criteria: Dict[str, Any]) -> Dict[str, List[str]]:
     }
 
 
+def _flatten_evaluations(
+    criteria_evaluations: Dict[str, Any]
+) -> Dict[str, Dict[str, str]]:
+    flattened: Dict[str, Dict[str, str]] = {}
+    for section in ("must_haves", "gating_params", "nice_to_haves"):
+        for entry in criteria_evaluations.get(section, []) or []:
+            if not isinstance(entry, dict):
+                continue
+            criterion = (entry.get("criterion") or "").strip()
+            if not criterion:
+                continue
+            flattened[criterion] = {
+                "status": entry.get("status") or "Unsure",
+                "reason": entry.get("reason") or "Insufficient information.",
+            }
+    return flattened
+
+
 def run_test_run(
     test_run_id: str,
     candidate_ids: List[str],
@@ -1452,6 +1472,58 @@ def run_test_run(
             idx,
             len(candidate_ids),
         )
+
+
+def run_filter_run(
+    run_id: str,
+    candidates: List[Dict[str, Any]],
+    criteria: Dict[str, Any],
+) -> None:
+    logger.info("Starting filter run %s with %d candidates", run_id, len(candidates))
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    client = Anthropic(api_key=api_key) if api_key else None
+    bucket_counts = {
+        "Proceed": 0,
+        "Human Review": 0,
+        "Dismiss": 0,
+        "Unable to Enrich": 0,
+    }
+    for idx, candidate in enumerate(candidates, start=1):
+        candidate_id = candidate.get("id") or ""
+        candidate_name = _candidate_display_name(candidate)
+        candidate_linkedin = candidate.get("linkedin_url")
+        candidate_email = None
+        standardized_data = candidate.get("standardized_data") or {}
+        if isinstance(standardized_data, dict):
+            candidate_email = standardized_data.get("email")
+        try:
+            evaluation = evaluate_candidate(candidate, criteria, client=client)
+            criteria_evaluations = evaluation.get("evaluations", {})
+            final_bucket = evaluation.get("bucket", "Unable to Enrich")
+        except Exception:
+            logger.exception(
+                "Filter run evaluation failed run_id=%s candidate_id=%s",
+                run_id,
+                candidate_id,
+            )
+            criteria_evaluations = _build_empty_evaluations(
+                criteria, "Evaluation error."
+            )
+            final_bucket = "Unable to Enrich"
+        db.insert_filter_result(
+            run_id=run_id,
+            candidate_id=candidate_id,
+            candidate_name=candidate_name,
+            candidate_email=candidate_email,
+            candidate_linkedin=candidate_linkedin,
+            criteria_evaluations=criteria_evaluations,
+            final_determination=final_bucket,
+        )
+        if final_bucket in bucket_counts:
+            bucket_counts[final_bucket] += 1
+        db.update_filter_run_progress(run_id, idx, bucket_counts)
+        logger.info("Filter run %s progress: %d/%d", run_id, idx, len(candidates))
+    db.complete_filter_run(run_id, "completed")
 
 
 @app.post("/api/roles/{role_id}/test-runs")
@@ -1626,6 +1698,234 @@ def get_test_run_status(test_run_id: str):
     )
 
 
+@app.post("/api/batches/{batch_id}/run-full")
+def start_full_run(batch_id: str, count: int = 0):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    role_id = batch.get("role_id")
+    criteria = db.get_latest_role_criteria(role_id)
+    if not criteria:
+        return JSONResponse(
+            {"error": "No criteria configured for role"},
+            status_code=400,
+        )
+
+    try:
+        criteria_version_id = db.ensure_criteria_version(criteria)
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to prepare criteria version: {exc}"},
+            status_code=500,
+        )
+
+    metrics = db.get_batch_metrics(batch_id)
+    total_available = metrics.get("final_count", 0)
+    if total_available <= 0:
+        return JSONResponse(
+            {"error": "No standardized candidates available"},
+            status_code=400,
+        )
+
+    if count < 0:
+        return JSONResponse({"error": "count must be positive"}, status_code=400)
+
+    run_count = total_available if count in (0, None) else min(count, total_available)
+    run_type = "full"
+    randomize = False
+    if run_count < total_available:
+        run_type = "subset"
+        randomize = True
+
+    candidates = db.list_standardized_candidates_for_batch(
+        batch_id, limit=run_count, randomize=randomize
+    )
+    if not candidates:
+        return JSONResponse(
+            {"error": "No standardized candidates available"},
+            status_code=400,
+        )
+
+    try:
+        run_id = db.create_filter_run(
+            role_id=role_id,
+            criteria_version_id=criteria_version_id,
+            run_type=run_type,
+            batch_id=batch_id,
+            batch_name=batch.get("name"),
+            total_candidates=len(candidates),
+        )
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to create filter run: {exc}"},
+            status_code=500,
+        )
+
+    def _run_full() -> None:
+        try:
+            run_filter_run(run_id, candidates, criteria)
+        except Exception:
+            logger.exception("Filter run failed run_id=%s", run_id)
+            db.complete_filter_run(run_id, "failed")
+
+    threading.Thread(target=_run_full, daemon=True).start()
+
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "criteria_version_id": criteria_version_id,
+            "criteria_version": criteria.get("version"),
+            "candidate_count": len(candidates),
+            "run_type": run_type,
+        }
+    )
+
+
+@app.get("/api/filter-runs/{run_id}")
+def get_filter_run_status(run_id: str):
+    run = db.get_filter_run(run_id)
+    if not run:
+        return JSONResponse({"error": "Run not found"}, status_code=404)
+
+    criteria_version = db.get_criteria_version(run["criteria_version_id"])
+    criteria_data = criteria_version.get("criteria_data") if criteria_version else {}
+    criteria_columns = _criteria_columns(criteria_data)
+
+    results = db.list_filter_results(run_id)
+    status = run.get("status") or "running"
+    bucket_counts = {
+        "Proceed": run.get("proceed_count") or 0,
+        "Human Review": run.get("review_count") or 0,
+        "Dismiss": run.get("dismiss_count") or 0,
+        "Unable to Enrich": run.get("unable_to_enrich_count") or 0,
+    }
+
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "role_id": run.get("role_id"),
+            "criteria_version_id": run.get("criteria_version_id"),
+            "criteria_version": criteria_version.get("version")
+            if criteria_version
+            else None,
+            "run_type": run.get("run_type"),
+            "batch_id": run.get("input_csv_path"),
+            "batch_name": run.get("input_csv_filename"),
+            "candidate_count": run.get("total_candidates") or 0,
+            "evaluated_count": run.get("current_candidate") or 0,
+            "status": status,
+            "criteria_columns": criteria_columns,
+            "results": results,
+            "bucket_counts": bucket_counts,
+        }
+    )
+
+
+@app.get("/api/batches/{batch_id}/runs/latest")
+def get_latest_run_for_batch(batch_id: str, role_id: str):
+    latest = db.get_latest_filter_run_for_batch(role_id, batch_id)
+    if not latest:
+        return JSONResponse({"error": "Run not found"}, status_code=404)
+    return JSONResponse(
+        {
+            "run_id": latest.get("id"),
+            "status": latest.get("status"),
+            "created_at": latest.get("created_at"),
+        }
+    )
+
+
+@app.get("/api/filter-runs/{run_id}/export")
+def export_filter_run(run_id: str, bucket: Optional[str] = None):
+    run = db.get_filter_run(run_id)
+    if not run:
+        return JSONResponse({"error": "Run not found"}, status_code=404)
+
+    criteria_version = db.get_criteria_version(run["criteria_version_id"])
+    criteria_data = criteria_version.get("criteria_data") if criteria_version else {}
+    criteria_columns = _criteria_columns(criteria_data)
+    criteria_labels: List[str] = []
+    for key in ("must_haves", "gating_params", "nice_to_haves"):
+        criteria_labels.extend(criteria_columns.get(key, []))
+
+    results = db.list_filter_results(run_id)
+    if bucket and bucket != "All":
+        results = [r for r in results if r.get("final_bucket") == bucket]
+
+    custom_fields: Set[str] = set()
+    for result in results:
+        standardized_data = result.get("standardized_data")
+        if isinstance(standardized_data, dict):
+            custom_fields.update(standardized_data.keys())
+
+    base_fields = [
+        "candidate_id",
+        "first_name",
+        "last_name",
+        "full_name",
+        "linkedin_url",
+        "location",
+        "current_company",
+        "current_title",
+    ]
+    custom_field_list = sorted(custom_fields)
+    criteria_headers: List[str] = []
+    for label in criteria_labels:
+        criteria_headers.append(f"{label} - status")
+        criteria_headers.append(f"{label} - reason")
+    headers = (
+        base_fields
+        + custom_field_list
+        + ["raw_data_json", "standardized_data_json", "bucket"]
+        + criteria_headers
+    )
+
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=headers)
+    writer.writeheader()
+    for result in results:
+        standardized_data = result.get("standardized_data") or {}
+        raw_data = result.get("raw_data") or {}
+        row = {
+            "candidate_id": result.get("candidate_id"),
+            "first_name": result.get("first_name"),
+            "last_name": result.get("last_name"),
+            "full_name": result.get("full_name"),
+            "linkedin_url": result.get("linkedin_url")
+            or result.get("candidate_linkedin"),
+            "location": result.get("location"),
+            "current_company": result.get("current_company"),
+            "current_title": result.get("current_title"),
+            "raw_data_json": json.dumps(raw_data, ensure_ascii=False),
+            "standardized_data_json": json.dumps(
+                standardized_data, ensure_ascii=False
+            ),
+            "bucket": result.get("final_bucket"),
+        }
+        for field in custom_field_list:
+            row[field] = standardized_data.get(field)
+        evaluation_map = _flatten_evaluations(
+            result.get("criteria_evaluations") or {}
+        )
+        for label in criteria_labels:
+            entry = evaluation_map.get(label, {})
+            row[f"{label} - status"] = entry.get("status", "Unsure")
+            row[f"{label} - reason"] = entry.get(
+                "reason", "Insufficient information."
+            )
+        writer.writerow(row)
+
+    filename = f"filter_results_{run_id}.csv"
+    return Response(
+        output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
 def run_detail(request: Request, run_id: str):
     st = get_run_or_404(run_id)
@@ -1735,6 +2035,58 @@ def test_run_page(request: Request, role_id: str, batch_id: str):
             "stepper": build_stepper_context(
                 step_from_batch_status(batch.get("status")), role_id, batch_id
             ),
+        },
+    )
+
+
+@app.get("/roles/{role_id}/batches/{batch_id}/run", response_class=HTMLResponse)
+def full_run_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
+    metrics = db.get_batch_metrics(batch_id)
+    role_name = db.get_role_name(role_id)
+    criteria = db.get_latest_role_criteria(role_id)
+
+    return templates.TemplateResponse(
+        "run_full.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "role_name": role_name,
+            "batch_name": batch.get("name"),
+            "batch_status": batch.get("status"),
+            "final_count": metrics["final_count"],
+            "criteria": criteria,
+            "stepper": build_stepper_context("filter", role_id, batch_id),
+        },
+    )
+
+
+@app.get("/roles/{role_id}/batches/{batch_id}/results", response_class=HTMLResponse)
+def results_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
+    role_name = db.get_role_name(role_id)
+    run_id = request.query_params.get("run_id")
+    if not run_id:
+        latest = db.get_latest_filter_run_for_batch(role_id, batch_id)
+        run_id = latest.get("id") if latest else ""
+
+    return templates.TemplateResponse(
+        "results.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "role_name": role_name,
+            "batch_name": batch.get("name"),
+            "run_id": run_id,
+            "stepper": build_stepper_context("results", role_id, batch_id),
         },
     )
 
