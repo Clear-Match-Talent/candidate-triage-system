@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/stepper.css" />
   <style>
     body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
     h1 { margin: 0 0 8px; }
@@ -27,6 +28,8 @@
 <body>
   <h1>Candidate Triage System</h1>
   <p class="hint">Upload one or more CSV exports. The system will standardize + dedupe, run AI evaluation, and produce proceed/human_review/dismiss outputs.</p>
+
+  {% include "components/stepper.html" %}
 
   <div class="card">
     <form action="/run" method="post" enctype="multipart/form-data">

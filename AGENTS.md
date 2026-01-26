@@ -147,6 +147,11 @@ df = pd.read_csv('input.csv')
 df.to_csv('output.csv', index=False)
 ```
 
+### UI Components
+The workflow stepper lives in `webapp/templates/components/stepper.html` with shared
+styles in `webapp/static/stepper.css`. Pass `stepper` context from `webapp/main.py`
+using `build_stepper_context(...)` so the active step reflects batch status.
+
 ### LLM Calls
 ```python
 # Always set API key from environment

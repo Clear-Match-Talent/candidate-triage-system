@@ -4,6 +4,7 @@ Started: Mon Jan 26 07:24:00 UTC 2026
 ## Codebase Patterns
 - Database schema lives in `database/schema.sql` and is applied via `python3 database/migrate.py --sql <file>`.
 - Batch uploads are stored under `uploads/batches/{batch_id}` with metadata saved via `webapp.db.create_candidate_batch` and `webapp.db.insert_batch_file_upload`.
+- Workflow stepper UI uses `webapp/templates/components/stepper.html` with shared styles in `webapp/static/stepper.css` and `build_stepper_context` in `webapp/main.py`.
 ## 2026-01-26 07:26:53 UTC - US-001
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - What was implemented: Added candidate batch tables and indexes to the SQLite schema and added a migration script to apply schema SQL.
@@ -123,4 +124,16 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
     - None.
   - Useful context (e.g., "the evaluation panel is in component X")
     - Duplicate candidates are exposed via `/api/batches/:batch_id/duplicates` and exported from `/api/batches/:batch_id/duplicates/export`.
+---
+## 2026-01-26 08:37:10 UTC - US-009
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added reusable stepper component and shared styles, wired batch-status-driven stepper context into batch pages and added stepper display to upload/results views.
+- Files changed: `webapp/main.py`, `webapp/templates/components/stepper.html`, `webapp/templates/map.html`, `webapp/templates/review.html`, `webapp/templates/test_run.html`, `webapp/templates/duplicates.html`, `webapp/templates/index.html`, `webapp/templates/run.html`, `webapp/static/stepper.css`, `webapp/static/map.css`, `webapp/static/review.css`, `webapp/static/test_run.css`, `webapp/static/duplicates.css`, `AGENTS.md`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - Use `build_stepper_context` in `webapp/main.py` to drive the shared workflow stepper UI.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Stepper template lives at `webapp/templates/components/stepper.html` with shared CSS in `webapp/static/stepper.css`.
 ---

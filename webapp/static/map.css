@@ -70,30 +70,6 @@ h1 {
   font-size: 13px;
 }
 
-.stepper {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 24px;
-  font-size: 12px;
-}
-
-.step {
-  padding: 8px 6px;
-  text-align: center;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.2);
-  color: var(--muted);
-  border: 1px solid transparent;
-}
-
-.step.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent);
-  font-weight: 600;
-}
-
 .content {
   display: grid;
   grid-template-columns: 2fr 1fr;
@@ -241,11 +217,6 @@ button:disabled {
 @media (max-width: 960px) {
   .content {
     grid-template-columns: 1fr;
-  }
-
-  .stepper {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    row-gap: 8px;
   }
 
   .column-row {

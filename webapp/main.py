@@ -61,6 +61,28 @@ STANDARDIZED_FIELDS = [
     "current_company",
     "current_title",
 ]
+STEPPER_STEPS = [
+    {"key": "upload", "label": "Upload"},
+    {"key": "map", "label": "Map Fields"},
+    {"key": "standardize", "label": "Standardize"},
+    {"key": "review", "label": "Review"},
+    {"key": "approve", "label": "Approve"},
+    {"key": "test_run", "label": "Test Run"},
+    {"key": "filter", "label": "Filter"},
+    {"key": "results", "label": "Results"},
+]
+STEPPER_STATUS_MAP = {
+    "pending": "map",
+    "mapping": "map",
+    "standardizing": "standardize",
+    "standardized": "review",
+    "approved": "test_run",
+}
+STEPPER_URL_BUILDERS = {
+    "map": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/map",
+    "review": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/review",
+    "test_run": lambda role_id, batch_id: f"/roles/{role_id}/batches/{batch_id}/test-run",
+}
 
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -97,6 +119,41 @@ class RunStatus:
     chat_messages: Optional[list] = None  # Chat history with agent
     agent_session_key: Optional[str] = None  # Clawdbot session for this run
     pending_action: Optional[dict] = None  # Proposed data modification waiting for confirmation
+
+
+def step_from_batch_status(status: Optional[str]) -> str:
+    """Translate batch status into the active workflow step."""
+    return STEPPER_STATUS_MAP.get((status or "").lower(), "upload")
+
+
+def build_stepper_context(
+    current_step: str,
+    role_id: Optional[str] = None,
+    batch_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return stepper payload for templates."""
+    step_index = {step["key"]: idx for idx, step in enumerate(STEPPER_STEPS)}
+    current_index = step_index.get(current_step, 0)
+    steps: List[Dict[str, Any]] = []
+    for idx, step in enumerate(STEPPER_STEPS):
+        if idx < current_index:
+            state = "completed"
+        elif idx == current_index:
+            state = "active"
+        else:
+            state = "future"
+        url = None
+        if role_id and batch_id and step["key"] in STEPPER_URL_BUILDERS:
+            url = STEPPER_URL_BUILDERS[step["key"]](role_id, batch_id)
+        steps.append(
+            {
+                "key": step["key"],
+                "label": step["label"],
+                "state": state,
+                "url": url,
+            }
+        )
+    return {"steps": steps, "current": current_step}
 
 
 # Helper functions for DB <-> RunStatus conversion
@@ -386,6 +443,7 @@ def home(request: Request):
         {
             "request": request,
             "recent": recent,
+            "stepper": build_stepper_context("upload"),
         },
     )
 
@@ -865,48 +923,80 @@ def run_detail(request: Request, run_id: str):
     if not st:
         return HTMLResponse("Run not found", status_code=404)
 
+    run_step_map = {
+        "queued": "upload",
+        "running": "standardize",
+        "standardized": "review",
+        "evaluating": "filter",
+        "done": "results",
+        "error": "results",
+    }
+    current_step = run_step_map.get(st.state, "results")
+
     return templates.TemplateResponse(
         "run.html",
         {
             "request": request,
             "run": st,
             "run_json": json.dumps(asdict(st), indent=2),
+            "stepper": build_stepper_context(current_step),
         },
     )
 
 
 @app.get("/roles/{role_id}/batches/{batch_id}/map", response_class=HTMLResponse)
 def map_fields_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
     return templates.TemplateResponse(
         "map.html",
         {
             "request": request,
             "role_id": role_id,
             "batch_id": batch_id,
+            "stepper": build_stepper_context(
+                step_from_batch_status(batch.get("status")), role_id, batch_id
+            ),
         },
     )
 
 
 @app.get("/roles/{role_id}/batches/{batch_id}/review", response_class=HTMLResponse)
 def review_batch_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
     return templates.TemplateResponse(
         "review.html",
         {
             "request": request,
             "role_id": role_id,
             "batch_id": batch_id,
+            "stepper": build_stepper_context(
+                step_from_batch_status(batch.get("status")), role_id, batch_id
+            ),
         },
     )
 
 
 @app.get("/roles/{role_id}/batches/{batch_id}/duplicates", response_class=HTMLResponse)
 def duplicates_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
     return templates.TemplateResponse(
         "duplicates.html",
         {
             "request": request,
             "role_id": role_id,
             "batch_id": batch_id,
+            "stepper": build_stepper_context(
+                step_from_batch_status(batch.get("status")), role_id, batch_id
+            ),
         },
     )
 
@@ -929,6 +1019,9 @@ def test_run_page(request: Request, role_id: str, batch_id: str):
             "batch_status": batch.get("status"),
             "file_count": metrics["file_count"],
             "final_count": metrics["final_count"],
+            "stepper": build_stepper_context(
+                step_from_batch_status(batch.get("status")), role_id, batch_id
+            ),
         },
     )
 

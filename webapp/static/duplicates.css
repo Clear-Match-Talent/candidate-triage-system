@@ -52,30 +52,6 @@ h1 {
   color: var(--muted);
 }
 
-.stepper {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 24px;
-  font-size: 12px;
-}
-
-.step {
-  padding: 8px 6px;
-  text-align: center;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.2);
-  color: var(--muted);
-  border: 1px solid transparent;
-}
-
-.step.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent);
-  font-weight: 600;
-}
-
 .summary {
   display: flex;
   align-items: center;

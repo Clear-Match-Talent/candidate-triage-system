@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Map Fields - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/stepper.css" />
   <link rel="stylesheet" href="/static/map.css" />
 </head>
 <body>
@@ -20,16 +21,7 @@
       </div>
     </header>
 
-    <nav class="stepper">
-      <div class="step">Upload</div>
-      <div class="step active">Map Fields</div>
-      <div class="step">Standardize</div>
-      <div class="step">Review</div>
-      <div class="step">Approve</div>
-      <div class="step">Test Run</div>
-      <div class="step">Filter</div>
-      <div class="step">Results</div>
-    </nav>
+    {% include "components/stepper.html" %}
 
     <main class="content">
       <section class="panel" id="source-panel">

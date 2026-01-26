@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Run {{ run.run_name }}</title>
+  <link rel="stylesheet" href="/static/stepper.css" />
   <style>
     body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
     .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #ddd; }
@@ -31,6 +32,8 @@
     Status: <span class="pill {{ run.state }}">{{ run.state }}</span><br/>
     Message: {{ run.message }}
   </p>
+
+  {% include "components/stepper.html" %}
 
   <div class="card">
     {% if run.state == 'done' and run.outputs %}

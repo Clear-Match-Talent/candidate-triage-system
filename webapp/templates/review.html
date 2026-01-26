@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Review Batch - Candidate Triage System</title>
+  <link rel="stylesheet" href="/static/stepper.css" />
   <link rel="stylesheet" href="/static/review.css" />
 </head>
 <body>
@@ -20,16 +21,7 @@
       </div>
     </header>
 
-    <nav class="stepper">
-      <div class="step">Upload</div>
-      <div class="step">Map Fields</div>
-      <div class="step">Standardize</div>
-      <div class="step active">Review</div>
-      <div class="step">Approve</div>
-      <div class="step">Test Run</div>
-      <div class="step">Filter</div>
-      <div class="step">Results</div>
-    </nav>
+    {% include "components/stepper.html" %}
 
     <section class="summary">
       <div class="summary-main">
