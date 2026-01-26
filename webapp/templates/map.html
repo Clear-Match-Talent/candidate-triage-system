@@ -13,7 +13,7 @@
       <div>
         <p class="kicker">Candidate Standardization</p>
         <h1>Map CSV Fields</h1>
-        <p class="subtitle">Review each source column and assign it to the standardized schema.</p>
+        <p class="subtitle">Map each source column to the standardized schema. Rows represent target fields, columns represent your uploaded files.</p>
       </div>
       <div class="batch-chip">
         <span>Batch</span>
@@ -24,31 +24,34 @@
     {% include "components/stepper.html" %}
 
     <main class="content">
-      <section class="panel" id="source-panel">
-        <div class="panel-header">
-          <h2>Source Columns</h2>
-          <p>Grouped by file. Select the target field for each column.</p>
-        </div>
-        <div id="files" class="file-list">
-          <div class="empty-state">Loading mappings...</div>
-        </div>
-      </section>
+      <div id="loading-state" class="loading-state">Loading mappings...</div>
 
-      <aside class="panel" id="standard-panel">
-        <div class="panel-header">
-          <h2>Standardized Fields</h2>
-          <p>These are the target fields for the standardized schema.</p>
+      <div id="grid-container" class="grid-container hidden">
+        <div class="grid-scroll">
+          <table id="mapping-grid" class="mapping-grid">
+            <thead>
+              <tr>
+                <th class="target-header">Target Field</th>
+                <!-- File columns will be inserted here by JS -->
+              </tr>
+            </thead>
+            <tbody id="grid-body">
+              <!-- Target field rows will be inserted here by JS -->
+            </tbody>
+          </table>
         </div>
-        <ul id="standardized-fields" class="field-list"></ul>
-        <div class="required-card">
-          <strong>Required:</strong>
-          <span>linkedin_url must be mapped before you can continue.</span>
+
+        <div class="actions-bar">
+          <button id="add-custom-field" class="btn-secondary">+ Add Custom Field</button>
+          <div class="actions-right">
+            <div class="required-note">
+              <strong>Note:</strong> linkedin_url must be mapped to continue.
+            </div>
+            <p id="mapping-error" class="error hidden"></p>
+            <button id="apply-mappings" disabled class="btn-primary">Apply Mappings</button>
+          </div>
         </div>
-        <div class="actions">
-          <p id="mapping-error" class="error hidden">Please map a column to linkedin_url.</p>
-          <button id="apply-mappings" disabled>Apply Mappings</button>
-        </div>
-      </aside>
+      </div>
     </main>
   </div>
 

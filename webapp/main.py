@@ -233,21 +233,26 @@ def apply_mappings_to_row(
 ) -> Dict[str, Optional[str]]:
     standardized: Dict[str, Optional[str]] = {}
     for source, target in mappings.items():
-        if target == "skip":
+        if target == "skip" or target == "":
             continue
-        if target not in STANDARDIZED_FIELDS:
-            continue
+        # Allow both standard fields and custom fields
         value = normalize_value(row.get(source))
         if value is None:
             continue
         if not standardized.get(target):
             standardized[target] = value
+    # Smart name splitting if full_name is provided but not first/last
     full_name = normalize_value(standardized.get("full_name"))
     if full_name and not standardized.get("first_name") and not standardized.get("last_name"):
         parts = full_name.split()
-        if parts:
+        if len(parts) == 1:
+            # Single name (e.g., "Madonna") -> first_name only
             standardized["first_name"] = parts[0]
-            standardized["last_name"] = " ".join(parts[1:]) if len(parts) > 1 else ""
+            standardized["last_name"] = ""
+        elif len(parts) > 1:
+            # Multiple parts: first word = first_name, rest = last_name
+            standardized["first_name"] = parts[0]
+            standardized["last_name"] = " ".join(parts[1:])
     return standardized
 
 
@@ -607,29 +612,31 @@ def apply_batch_mappings(
     if not batch:
         return JSONResponse({"error": "Batch not found"}, status_code=404)
 
-    files_payload = payload.get("files", [])
-    if not files_payload:
+    # New grid format: { mappings: {target: {filename: source}}, custom_fields: [] }
+    mappings = payload.get("mappings", {})
+    custom_fields = payload.get("custom_fields", [])
+
+    if not mappings:
         return JSONResponse({"error": "No mappings provided"}, status_code=400)
 
-    is_valid, error_message = validate_mapping_payload(files_payload)
-    if not is_valid:
-        return JSONResponse({"error": error_message}, status_code=400)
+    # Validate linkedin_url is mapped
+    linkedin_mappings = mappings.get("linkedin_url", {})
+    if not linkedin_mappings or not any(linkedin_mappings.values()):
+        return JSONResponse({"error": "linkedin_url mapping is required"}, status_code=400)
 
     uploads = db.list_batch_file_uploads(batch_id)
     if not uploads:
         return JSONResponse({"error": "No files found for batch"}, status_code=400)
 
-    mappings_by_filename = {
-        file_payload.get("filename"): file_payload.get("mappings", {})
-        for file_payload in files_payload
-    }
+    # Convert grid format to file-centric format for processing
+    # mappings_by_filename: {filename: {source_col: target_field}}
+    mappings_by_filename: Dict[str, Dict[str, str]] = {}
 
-    for upload in uploads:
-        if upload.get("filename") not in mappings_by_filename:
-            return JSONResponse(
-                {"error": f"Missing mappings for {upload.get('filename')}"},
-                status_code=400,
-            )
+    for target_field, file_mappings in mappings.items():
+        for filename, source_column in file_mappings.items():
+            if filename not in mappings_by_filename:
+                mappings_by_filename[filename] = {}
+            mappings_by_filename[filename][source_column] = target_field
 
     total_uploaded = sum(upload.get("row_count") or 0 for upload in uploads)
     seen_linkedin: set[str] = set()
@@ -648,11 +655,22 @@ def apply_batch_mappings(
                 status_code=400,
             )
         df = read_csv_with_fallback(file_path)
-        mappings = mappings_by_filename.get(filename, {})
+        file_mappings = mappings_by_filename.get(filename, {})
 
         for _, row in df.iterrows():
             raw_row = row.to_dict()
-            standardized_data = apply_mappings_to_row(raw_row, mappings)
+            standardized_data = apply_mappings_to_row(raw_row, file_mappings)
+
+            # Handle custom fields
+            for custom_field in custom_fields:
+                if custom_field in file_mappings.values():
+                    # Find which source column maps to this custom field
+                    for source_col, target_field in file_mappings.items():
+                        if target_field == custom_field:
+                            value = normalize_value(raw_row.get(source_col))
+                            if value:
+                                standardized_data[custom_field] = value
+
             linkedin_url = normalize_value(standardized_data.get("linkedin_url"))
             normalized_key = linkedin_url.lower() if linkedin_url else ""
             status = "standardized"

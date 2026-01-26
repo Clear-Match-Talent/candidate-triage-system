@@ -2,14 +2,35 @@ const page = document.querySelector('.page');
 const roleId = page?.dataset.roleId;
 const batchId = page?.dataset.batchId;
 
-const filesContainer = document.getElementById('files');
-const fieldsList = document.getElementById('standardized-fields');
+const loadingState = document.getElementById('loading-state');
+const gridContainer = document.getElementById('grid-container');
+const gridBody = document.getElementById('grid-body');
+const gridHead = document.querySelector('#mapping-grid thead tr');
 const applyButton = document.getElementById('apply-mappings');
+const addCustomFieldButton = document.getElementById('add-custom-field');
 const errorBanner = document.getElementById('mapping-error');
 
-let standardizedFields = [];
+// Standard target fields (order matters)
+const STANDARD_FIELDS = [
+  'first_name',
+  'last_name',
+  'full_name',
+  'linkedin_url',
+  'location',
+  'current_company',
+  'current_title'
+];
 
-const createOption = (value, label, selected) => {
+let filesData = [];
+let customFields = [];
+let hasAttemptedApply = false;
+
+const normalizeValue = (value) => (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * Create an option element for a select dropdown
+ */
+const createOption = (value, label, selected = false) => {
   const option = document.createElement('option');
   option.value = value;
   option.textContent = label;
@@ -19,81 +40,244 @@ const createOption = (value, label, selected) => {
   return option;
 };
 
+/**
+ * Check if all required fields are mapped and update Apply button state
+ */
 const updateApplyState = () => {
-  const hasLinkedIn = Array.from(document.querySelectorAll('select[data-source]'))
-    .some((select) => select.value === 'linkedin_url');
-  applyButton.disabled = !hasLinkedIn;
-  if (hasLinkedIn) {
-    errorBanner.classList.add('hidden');
-  }
-};
+  const linkedinSelects = Array.from(
+    document.querySelectorAll('tr[data-target="linkedin_url"] select')
+  );
 
-const renderStandardizedFields = () => {
-  fieldsList.innerHTML = '';
-  standardizedFields.forEach((field) => {
-    const item = document.createElement('li');
-    item.textContent = field;
-    fieldsList.appendChild(item);
+  const hasLinkedInMapping = linkedinSelects.some(select => {
+    const value = select.value;
+    return value && value !== '' && value !== 'skip';
   });
+
+  applyButton.disabled = !hasLinkedInMapping;
+
+  if (hasLinkedInMapping) {
+    errorBanner.classList.add('hidden');
+  } else if (hasAttemptedApply) {
+    errorBanner.textContent = 'LinkedIn URL must be mapped before you can continue.';
+    errorBanner.classList.remove('hidden');
+  }
 };
 
-const renderFiles = (files) => {
-  filesContainer.innerHTML = '';
+/**
+ * Check if a suggested mapping should be applied (high confidence only)
+ */
+const isHighConfidenceMatch = (sourceColumn, targetField) => {
+  const source = normalizeValue(sourceColumn);
+  const target = normalizeValue(targetField);
 
-  if (!files.length) {
-    filesContainer.innerHTML = '<div class="empty-state">No files found for this batch.</div>';
-    return;
+  if (!source || !target) {
+    return false;
   }
 
-  files.forEach((file) => {
-    const card = document.createElement('div');
-    card.className = 'file-card';
-    if (file.filename) {
-      card.dataset.filename = file.filename;
-    }
+  if (source === target) {
+    return true;
+  }
 
-    const title = document.createElement('h3');
-    title.textContent = file.filename || 'Untitled CSV';
-    card.appendChild(title);
+  return source.startsWith(target) || target.startsWith(source);
+};
 
-    (file.headers || []).forEach((header) => {
-      const row = document.createElement('div');
-      row.className = 'column-row';
+/**
+ * Create a select dropdown for a mapping cell
+ */
+const createMappingSelect = (filename, targetField, suggestedMappings) => {
+  const select = document.createElement('select');
+  select.dataset.filename = filename;
+  select.dataset.target = targetField;
 
-      const label = document.createElement('div');
-      label.className = 'column-label';
-      label.textContent = header;
-      const subtitle = document.createElement('span');
-      subtitle.textContent = 'Source column';
-      label.appendChild(subtitle);
+  // Add empty option (default)
+  select.appendChild(createOption('', '(blank)', false));
 
-      const select = document.createElement('select');
-      select.dataset.source = header;
-      select.appendChild(createOption('skip', 'Skip', false));
-      standardizedFields.forEach((field) => {
-        select.appendChild(createOption(field, field, false));
-      });
+  // Get headers for this file
+  const fileData = filesData.find(f => f.filename === filename);
+  if (!fileData || !fileData.headers) {
+    return select;
+  }
 
-      const suggested = file.suggested_mappings?.[header];
-      if (suggested && standardizedFields.includes(suggested)) {
-        select.value = suggested;
-      } else if (suggested === 'skip') {
-        select.value = 'skip';
-      }
+  // Add each header as an option
+  fileData.headers.forEach(header => {
+    const isSelected = suggestedMappings?.[header] === targetField &&
+                       isHighConfidenceMatch(header, targetField);
+    select.appendChild(createOption(header, header, isSelected));
+  });
 
-      select.addEventListener('change', updateApplyState);
+  select.addEventListener('change', updateApplyState);
 
-      row.appendChild(label);
-      row.appendChild(select);
-      card.appendChild(row);
-    });
+  return select;
+};
 
-    filesContainer.appendChild(card);
+/**
+ * Create a row for a target field
+ */
+const createTargetFieldRow = (targetField, isRequired = false, isCustom = false) => {
+  const row = document.createElement('tr');
+  row.dataset.target = targetField;
+
+  if (isRequired) {
+    row.classList.add('required-row');
+  }
+  if (isCustom) {
+    row.classList.add('custom-row');
+  }
+
+  // Target field cell (left column, sticky)
+  const targetCell = document.createElement('td');
+  targetCell.classList.add('target-cell');
+  targetCell.textContent = targetField;
+
+  if (isRequired) {
+    const badge = document.createElement('span');
+    badge.classList.add('required-badge');
+    badge.textContent = 'REQUIRED';
+    targetCell.appendChild(badge);
+  }
+
+  if (isCustom) {
+    const badge = document.createElement('span');
+    badge.classList.add('custom-badge');
+    badge.textContent = 'CUSTOM';
+    targetCell.appendChild(badge);
+
+    // Add remove button for custom fields
+    const removeBtn = document.createElement('button');
+    removeBtn.classList.add('remove-field');
+    removeBtn.innerHTML = '×';
+    removeBtn.title = 'Remove custom field';
+    removeBtn.addEventListener('click', () => removeCustomField(targetField));
+    targetCell.appendChild(removeBtn);
+  }
+
+  row.appendChild(targetCell);
+
+  // Create a mapping cell for each file
+  filesData.forEach(fileData => {
+    const cell = document.createElement('td');
+    cell.classList.add('mapping-cell');
+
+    const select = createMappingSelect(
+      fileData.filename,
+      targetField,
+      fileData.suggested_mappings
+    );
+
+    cell.appendChild(select);
+    row.appendChild(cell);
+  });
+
+  return row;
+};
+
+/**
+ * Render the entire grid
+ */
+const renderGrid = () => {
+  // Clear existing content
+  gridBody.innerHTML = '';
+
+  // Clear and rebuild header (file columns)
+  while (gridHead.childNodes.length > 1) {
+    gridHead.removeChild(gridHead.lastChild);
+  }
+
+  filesData.forEach(fileData => {
+    const th = document.createElement('th');
+    th.classList.add('file-header');
+    th.textContent = fileData.filename || 'Untitled';
+    gridHead.appendChild(th);
+  });
+
+  // Add standard fields
+  STANDARD_FIELDS.forEach(field => {
+    const isRequired = field === 'linkedin_url';
+    const row = createTargetFieldRow(field, isRequired, false);
+    gridBody.appendChild(row);
+  });
+
+  // Add custom fields
+  customFields.forEach(field => {
+    const row = createTargetFieldRow(field, false, true);
+    gridBody.appendChild(row);
   });
 
   updateApplyState();
 };
 
+/**
+ * Add a custom field to the grid
+ */
+const addCustomField = () => {
+  const fieldName = prompt('Enter custom field name:');
+  if (!fieldName || fieldName.trim() === '') {
+    return;
+  }
+
+  const normalizedName = fieldName.trim().toLowerCase().replace(/\s+/g, '_');
+
+  // Check if field already exists
+  if (STANDARD_FIELDS.includes(normalizedName) || customFields.includes(normalizedName)) {
+    alert('This field already exists.');
+    return;
+  }
+
+  customFields.push(normalizedName);
+  renderGrid();
+};
+
+/**
+ * Remove a custom field
+ */
+const removeCustomField = (fieldName) => {
+  const index = customFields.indexOf(fieldName);
+  if (index > -1) {
+    customFields.splice(index, 1);
+    renderGrid();
+  }
+};
+
+/**
+ * Build the mappings payload for backend API
+ * Format: { mappings: { targetField: { filename: sourceColumn, ... }, ... }, custom_fields: [...] }
+ */
+const buildMappingsPayload = () => {
+  const mappings = {};
+
+  // Get all target field rows
+  const rows = Array.from(document.querySelectorAll('#grid-body tr[data-target]'));
+
+  rows.forEach(row => {
+    const targetField = row.dataset.target;
+    const selects = Array.from(row.querySelectorAll('select'));
+    const fieldMappings = {};
+
+    selects.forEach(select => {
+      const filename = select.dataset.filename;
+      const sourceColumn = select.value;
+
+      // Only include if a source column is selected (not blank)
+      if (sourceColumn && sourceColumn !== '') {
+        fieldMappings[filename] = sourceColumn;
+      }
+    });
+
+    // Only include target field if at least one file is mapped
+    if (Object.keys(fieldMappings).length > 0) {
+      mappings[targetField] = fieldMappings;
+    }
+  });
+
+  return {
+    mappings,
+    custom_fields: customFields
+  };
+};
+
+/**
+ * Load suggested mappings from backend
+ */
 const loadMappings = async () => {
   try {
     const response = await fetch(`/api/batches/${batchId}/suggest-mappings`, {
@@ -105,59 +289,65 @@ const loadMappings = async () => {
     }
 
     const payload = await response.json();
-    standardizedFields = payload.standardized_fields || [];
-    renderStandardizedFields();
-    renderFiles(payload.files || []);
+    filesData = payload.files || [];
+
+    loadingState.classList.add('hidden');
+    gridContainer.classList.remove('hidden');
+
+    errorBanner.classList.add('hidden');
+    renderGrid();
   } catch (error) {
-    filesContainer.innerHTML = '<div class="empty-state">Unable to load mappings.</div>';
+    console.error('Error loading mappings:', error);
+    loadingState.textContent = 'Unable to load mappings. Please try again.';
+    errorBanner.textContent = 'Unable to load mappings. Please refresh the page.';
+    errorBanner.classList.remove('hidden');
   }
 };
 
-const buildMappingsPayload = () => {
-  const fileCards = Array.from(document.querySelectorAll('.file-card'));
-
-  return fileCards.map((card) => {
-    const filename = card.dataset.filename || card.querySelector('h3')?.textContent || '';
-    const selects = Array.from(card.querySelectorAll('select[data-source]'));
-    const mappings = {};
-    selects.forEach((select) => {
-      mappings[select.dataset.source] = select.value;
-    });
-    return { filename, mappings };
-  });
-};
-
+/**
+ * Apply the mappings and proceed to review
+ */
 const applyMappings = async () => {
   if (applyButton.disabled) {
-    errorBanner.classList.remove('hidden');
+    hasAttemptedApply = true;
+    updateApplyState();
     return;
   }
 
   applyButton.disabled = true;
   applyButton.textContent = 'Applying...';
+  errorBanner.classList.add('hidden');
 
   try {
+    const payload = buildMappingsPayload();
+
     const response = await fetch(`/api/batches/${batchId}/apply-mappings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: buildMappingsPayload() }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
-      throw new Error('Failed to apply mappings.');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to apply mappings.');
     }
 
+    // Redirect to review page
     window.location.href = `/roles/${roleId}/batches/${batchId}/review`;
   } catch (error) {
+    console.error('Error applying mappings:', error);
     applyButton.disabled = false;
     applyButton.textContent = 'Apply Mappings';
-    errorBanner.textContent = 'Unable to apply mappings. Please try again.';
+    errorBanner.textContent = error.message || 'Unable to apply mappings. Please try again.';
     errorBanner.classList.remove('hidden');
   }
 };
 
+// Event listeners
 applyButton?.addEventListener('click', applyMappings);
+addCustomFieldButton?.addEventListener('click', addCustomField);
 
+// Initialize
 if (batchId) {
   loadMappings();
 }
