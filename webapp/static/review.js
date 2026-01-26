@@ -9,6 +9,8 @@ const metricDeduped = document.getElementById('metric-deduped');
 const metricFinal = document.getElementById('metric-final');
 const tableContainer = document.getElementById('table-container');
 const exportBtn = document.getElementById('export-btn');
+const approveBtn = document.getElementById('approve-btn');
+const approveMessage = document.getElementById('approve-message');
 
 const tabs = Array.from(document.querySelectorAll('.tab'));
 
@@ -32,6 +34,14 @@ const setMetric = (element, value) => {
 
 const renderEmptyState = (message) => {
   tableContainer.innerHTML = `<div class="empty-state">${message}</div>`;
+};
+
+const setApproveMessage = (message, isError = false) => {
+  if (!approveMessage) {
+    return;
+  }
+  approveMessage.textContent = message;
+  approveMessage.classList.toggle('error', isError);
 };
 
 const buildTable = (columns, rows, rowAccessor) => {
@@ -212,6 +222,29 @@ tabs.forEach((tab) => {
 
 if (exportBtn && batchId) {
   exportBtn.href = `/api/batches/${batchId}/export`;
+}
+
+if (approveBtn && batchId && roleId) {
+  approveBtn.addEventListener('click', async () => {
+    approveBtn.disabled = true;
+    setApproveMessage('Approving batch...');
+    try {
+      const response = await fetch(`/api/batches/${batchId}/approve`, {
+        method: 'POST',
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to approve batch.');
+      }
+      setApproveMessage('Batch approved. Redirecting to test run...');
+      window.setTimeout(() => {
+        window.location.href = `/roles/${roleId}/batches/${batchId}/test-run`;
+      }, 900);
+    } catch (error) {
+      setApproveMessage(error.message || 'Unable to approve batch.', true);
+      approveBtn.disabled = false;
+    }
+  });
 }
 
 setActiveTab('standardized');

@@ -720,6 +720,90 @@ def export_batch_candidates(batch_id: str):
     )
 
 
+@app.post("/api/batches/{batch_id}/approve")
+def approve_batch(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    if batch.get("status") == "approved":
+        return JSONResponse(
+            {
+                "batch_id": batch_id,
+                "status": batch.get("status"),
+                "approved_at": batch.get("approved_at"),
+            }
+        )
+
+    try:
+        updated = db.approve_candidate_batch(batch_id)
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to approve batch: {exc}"},
+            status_code=500,
+        )
+
+    if not updated:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    return JSONResponse(
+        {
+            "batch_id": updated.get("id"),
+            "status": updated.get("status"),
+            "approved_at": updated.get("approved_at"),
+        }
+    )
+
+
+@app.post("/api/roles/{role_id}/test-runs")
+def create_test_run(role_id: str, payload: Dict[str, Any] = Body(...)):
+    batch_id = payload.get("batch_id")
+    criteria_version_id = payload.get("criteria_version_id")
+
+    if not batch_id:
+        return JSONResponse({"error": "batch_id is required"}, status_code=400)
+
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    if not criteria_version_id:
+        latest = db.get_latest_criteria_version(role_id)
+        if not latest:
+            return JSONResponse(
+                {"error": "No criteria version found for role"},
+                status_code=400,
+            )
+        criteria_version_id = latest["id"]
+
+    candidate_ids = db.list_random_standardized_candidate_ids(batch_id, limit=50)
+    if not candidate_ids:
+        return JSONResponse(
+            {"error": "No standardized candidates available for batch"},
+            status_code=400,
+        )
+
+    try:
+        test_run_id = db.create_test_run(
+            role_id, criteria_version_id, candidate_ids
+        )
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Failed to create test run: {exc}"},
+            status_code=500,
+        )
+
+    return JSONResponse(
+        {
+            "test_run_id": test_run_id,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "criteria_version_id": criteria_version_id,
+            "candidate_count": len(candidate_ids),
+        }
+    )
+
+
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
 def run_detail(request: Request, run_id: str):
     st = get_run_or_404(run_id)
@@ -756,6 +840,28 @@ def review_batch_page(request: Request, role_id: str, batch_id: str):
             "request": request,
             "role_id": role_id,
             "batch_id": batch_id,
+        },
+    )
+
+
+@app.get("/roles/{role_id}/batches/{batch_id}/test-run", response_class=HTMLResponse)
+def test_run_page(request: Request, role_id: str, batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch or batch.get("role_id") != role_id:
+        return HTMLResponse("Batch not found", status_code=404)
+
+    metrics = db.get_batch_metrics(batch_id)
+
+    return templates.TemplateResponse(
+        "test_run.html",
+        {
+            "request": request,
+            "role_id": role_id,
+            "batch_id": batch_id,
+            "batch_name": batch.get("name"),
+            "batch_status": batch.get("status"),
+            "file_count": metrics["file_count"],
+            "final_count": metrics["final_count"],
         },
     )
 

@@ -350,6 +350,104 @@ def update_candidate_batch_status(batch_id: str, status: str) -> None:
         conn.close()
 
 
+def approve_candidate_batch(batch_id: str) -> Optional[Dict[str, Any]]:
+    """Approve a candidate batch and return the updated record."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE candidate_batches
+            SET status = 'approved', approved_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (batch_id,),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM candidate_batches WHERE id = ?", (batch_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    except Exception:
+        logger.exception("Failed to approve candidate batch batch_id=%s", batch_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def get_latest_criteria_version(role_id: str) -> Optional[Dict[str, Any]]:
+    """Return the latest criteria version for a role."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, role_id, version, criteria_data, created_at
+            FROM criteria_versions
+            WHERE role_id = ?
+            ORDER BY version DESC, created_at DESC
+            LIMIT 1
+            """,
+            (role_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def list_random_standardized_candidate_ids(
+    batch_id: str, limit: int = 50
+) -> List[str]:
+    """Return random standardized candidate IDs for a batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id
+            FROM raw_candidates
+            WHERE batch_id = ? AND status = 'standardized'
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (batch_id, limit),
+        )
+        rows = cursor.fetchall()
+        return [row["id"] for row in rows]
+    finally:
+        conn.close()
+
+
+def create_test_run(
+    role_id: str, criteria_version_id: str, candidate_ids: List[str]
+) -> str:
+    """Create a test run record and return its ID."""
+    test_run_id = str(uuid.uuid4())
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO test_runs (id, role_id, criteria_version_id, candidate_ids)
+            VALUES (?, ?, ?, ?)
+            """,
+            (test_run_id, role_id, criteria_version_id, json.dumps(candidate_ids)),
+        )
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to create test run role_id=%s", role_id)
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return test_run_id
+
+
 def insert_raw_candidates(
     batch_id: str,
     role_id: str,

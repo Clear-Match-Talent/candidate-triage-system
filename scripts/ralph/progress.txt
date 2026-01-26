@@ -100,3 +100,15 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context (e.g., "the evaluation panel is in component X")
     - Batch export pulls standardized candidates from `raw_candidates` with status='standardized'.
 ---
+## 2026-01-26 08:13:31 UTC - US-007
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added batch approval API, test run setup page and client flow, and wired test run creation to sample standardized candidates from approved batches.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `webapp/templates/test_run.html`, `webapp/static/test_run.css`, `webapp/static/test_run.js`, `webapp/templates/review.html`, `webapp/static/review.js`, `webapp/static/review.css`, `scripts/ralph/ralph.sh`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Test run setup lives at `/roles/:role_id/batches/:batch_id/test-run` and uses `/api/roles/:role_id/test-runs` with `batch_id` to sample standardized candidates.
+---
