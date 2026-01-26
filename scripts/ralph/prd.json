@@ -50,7 +50,7 @@
         "Edit button opens modal to update role metadata",
         "Archive button soft-deletes role (sets status='archived')",
         "Archived roles hidden from main list (optional filter to show them)",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser: 1) Navigate to /roles, 2) Click 'Create Role', modal appears, 3) Fill form and save, new role appears in list, 4) Click Archive, role disappears from list"
       ],
       "priority": 3,
       "passes": false,
@@ -85,7 +85,7 @@
         "Can replace file by uploading new one to same dropzone",
         "Shows upload progress indicator",
         "Error messages for invalid file types or upload failures",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser: 1) Navigate to role detail page, 2) Drag PDF to JD dropzone, file appears uploaded, 3) Click delete button, file removed, 4) Upload invalid file type (e.g., .exe), error message shown"
       ],
       "priority": 5,
       "passes": false,
@@ -102,7 +102,7 @@
         "Parses Claude response into structured JSON (must_haves array, gating_parameters array, nice_to_haves array)",
         "Stores extracted criteria temporarily (not saved to criteria_versions yet)",
         "Returns extracted criteria JSON to frontend",
-        "Handles extraction failures gracefully (empty arrays if no criteria found)"
+        "If extraction fails (API error, timeout, or unparseable response), return empty arrays for must_haves/gating_parameters/nice_to_haves with error flag"
       ],
       "priority": 6,
       "passes": false,
@@ -121,7 +121,7 @@
         "User can add/remove nice-to-have items",
         "Save button stores criteria to criteria_versions table with version number",
         "Form validation ensures at least one must-have is defined",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser: 1) Criteria page shows 3 sections with pre-filled AI suggestions, 2) Add new must-have item, appears in list, 3) Check 'job hopper' gating param, checkbox selected, 4) Save form, success confirmation shown"
       ],
       "priority": 7,
       "passes": false,
@@ -133,7 +133,7 @@
       "description": "As a system, I need to fetch LinkedIn profile data using Claude browser tool so I can enrich candidate information for evaluation.",
       "acceptanceCriteria": [
         "Create function fetch_linkedin_profile(linkedin_url: str) in filtering/enrichment.py",
-        "Use Claude Code's browser integration: subprocess call to `claude --print --dangerously-skip-permissions` with prompt to visit URL and extract HTML",
+        "Call Claude to visit LinkedIn URL: create prompt asking Claude to fetch the URL and return the HTML, pipe to `claude --print --dangerously-skip-permissions` via subprocess",
         "Alternative if browser not available: Use requests library to fetch public LinkedIn profile HTML",
         "Handle errors: return dict with status='success'|'not_found'|'rate_limit'|'requires_login'|'error'",
         "If successful, return {status: 'success', html: string, fetched_at: timestamp}",
@@ -160,7 +160,7 @@
         "Handle missing fields gracefully (set to null or empty array)",
         "Return structured dict with all extracted fields",
         "Update enriched_candidates table with extracted fields (current_title, current_company, job_history JSON, education JSON, skills JSON, location)",
-        "Test with sample LinkedIn HTML and verify extraction accuracy",
+        "Test with sample LinkedIn HTML: verify extracted current_title is not empty, job_history has at least 1 entry with title and company, education has school name",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 9,
@@ -197,7 +197,7 @@
         "Selected candidate identifiers (emails or unique IDs) stored in test_runs table",
         "test_run_id created and linked to role_id and criteria_version_id",
         "Returns selected candidates array to frontend",
-        "Subsequent test runs with same criteria_version reuse same 50 candidates (unless user explicitly resets)"
+        "Subsequent test runs with same criteria_version_id reuse same test_run_id and candidate set (stored in test_runs table)"
       ],
       "priority": 11,
       "passes": false,
@@ -212,7 +212,7 @@
         "If enrichment fails and CSV data insufficient, mark as 'Unable to Enrich'",
         "Evaluate each criteria (must-haves, gating params, nice-to-haves) using enriched data",
         "For each criteria, determine Pass/Fail/Unsure with one-sentence reasoning",
-        "Apply final determination logic: Proceed/Human Review/Dismiss/Unable to Enrich per FR-3",
+        "Apply final determination logic: 1) If LinkedIn inaccessible AND CSV insufficient -> Unable to Enrich, 2) If ANY gating param triggered -> Dismiss, 3) If ANY must-have=Fail -> Dismiss, 4) If ALL must-haves=Pass -> Proceed, 5) If all must-haves Pass or Unsure (at least one Unsure) -> Human Review",
         "Store test results in filter_results table linked to test run_id",
         "Update filter_runs with counts (proceed_count, review_count, dismiss_count, unable_to_enrich_count)"
       ],
@@ -233,7 +233,7 @@
         "Export to CSV button downloads test results with all criteria evaluations",
         "Refine Criteria button returns to US-001F form (preserves current test set)",
         "Approve & Run button proceeds to US-003 (full/subset run options)",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser: 1) Test results page shows table with 50 candidates, 2) Click Pass cell, tooltip shows reasoning, 3) Click 'Proceed' filter, only Proceed candidates shown, 4) Click Export CSV, file downloads, 5) Click Approve & Run, proceeds to run options page"
       ],
       "priority": 13,
       "passes": false,
@@ -251,9 +251,9 @@
         "Progress indicator shows current_candidate / total_candidates",
         "Backend creates filter_run record with status='running'",
         "Processes candidates using same logic as US-002B (enrichment + evaluation)",
-        "Updates filter_run counts (proceed_count, review_count, dismiss_count, unable_to_enrich_count) incrementally",
+        "After processing each candidate, update filter_run table: increment proceed_count/review_count/dismiss_count/unable_to_enrich_count and update current_candidate field",
         "Sets status='completed' when done, sets completed_at timestamp",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser: 1) Run options page shows 2 radio buttons, 2) Select 'Custom subset', enter 100, 3) Click Start Run, progress bar appears, 4) Progress shows 'Processing 5/100', 5) When complete, redirects to results page"
       ],
       "priority": 14,
       "passes": false,
@@ -288,7 +288,7 @@
         "Column headers are sortable (click to sort by name, determination, date)",
         "Pagination controls (prev/next, page numbers) if >100 results",
         "Shows counts: X Proceed, Y Human Review, Z Dismiss, W Unable to Enrich",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser: 1) Results page shows full candidate list, 2) Click row expand, detailed criteria shown, 3) Click 'Dismiss' filter button, only dismissed candidates shown, 4) Click name column header, sorts by name, 5) Counts at top match filtered results"
       ],
       "priority": 16,
       "passes": false,
@@ -306,7 +306,7 @@
         "CSV includes metadata: run_date, criteria_version, role_name",
         "CSV respects current filter (if user filtered to Proceed only, export only shows Proceed)",
         "Download triggers with proper filename: results_[role-name]_[date].csv",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser: 1) Click Export CSV button, 2) File downloads with correct filename format, 3) Open CSV in Excel/Google Sheets, 4) Verify all columns present (name, email, criteria columns, final_determination)"
       ],
       "priority": 17,
       "passes": false,
@@ -324,7 +324,7 @@
         "Previous criteria_version retained (not deleted)",
         "Can re-run test validation with updated criteria on same test set or new random 50",
         "Run history shows which criteria version was used for each run",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser: 1) Role detail page shows Edit Criteria button, 2) Click button, form loads with current criteria, 3) Modify a must-have, save, 4) Check database: new criteria_version created with incremented version number, old version still exists"
       ],
       "priority": 18,
       "passes": false,
@@ -342,7 +342,7 @@
         "Click on run opens results page (US-004B) for that specific run",
         "Can export results from any historical run (not just latest)",
         "Shows run status (running, completed, failed)",
-        "Verify in browser using dev-browser skill"
+        "Verify in browser: 1) Role detail shows Run History section, 2) List shows all previous runs sorted newest first, 3) Click on a run, opens that run's results page with correct data, 4) Export button on historical run works"
       ],
       "priority": 19,
       "passes": false,
