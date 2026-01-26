@@ -88,3 +88,15 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context (e.g., "the evaluation panel is in component X")
     - Review UI consumes `/api/batches/:batch_id/candidates` for both table data and summary metrics.
 ---
+## 2026-01-26 07:47:53 UTC - US-006
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- What was implemented: Added CSV export endpoint for standardized batch candidates with role-based filename and wired to review page download.
+- Files changed: `webapp/main.py`, `webapp/db.py`, `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+    - None.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+    - None.
+  - Useful context (e.g., "the evaluation panel is in component X")
+    - Batch export pulls standardized candidates from `raw_candidates` with status='standardized'.
+---

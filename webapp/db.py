@@ -137,6 +137,20 @@ def get_candidate_batch(batch_id: str) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
+def get_role_name(role_id: str) -> Optional[str]:
+    """Fetch role name by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT name FROM roles WHERE id = ?", (role_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return row["name"]
+    finally:
+        conn.close()
+
+
 def list_batch_file_uploads(batch_id: str) -> List[Dict[str, Any]]:
     """List uploaded files for a batch with parsed headers."""
     conn = get_data_connection()
@@ -174,6 +188,34 @@ def list_batch_file_uploads(batch_id: str) -> List[Dict[str, Any]]:
             }
         )
     return uploads
+
+
+def list_standardized_candidates(batch_id: str) -> List[Dict[str, Any]]:
+    """List standardized candidates for a batch."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                first_name,
+                last_name,
+                full_name,
+                linkedin_url,
+                location,
+                current_company,
+                current_title
+            FROM raw_candidates
+            WHERE batch_id = ? AND status = 'standardized'
+            ORDER BY created_at ASC
+            """,
+            (batch_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    return [dict(row) for row in rows]
 
 
 def list_raw_candidates(

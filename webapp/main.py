@@ -23,12 +23,19 @@ import subprocess
 import threading
 import time
 import uuid
+from io import StringIO
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Body, FastAPI, File, Form, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -685,6 +692,31 @@ def list_batch_candidates(batch_id: str, view: str = "standardized"):
             "final_count": metrics["final_count"],
             "file_count": metrics["file_count"],
         }
+    )
+
+
+@app.get("/api/batches/{batch_id}/export")
+def export_batch_candidates(batch_id: str):
+    batch = db.get_candidate_batch(batch_id)
+    if not batch:
+        return JSONResponse({"error": "Batch not found"}, status_code=404)
+
+    role_name = db.get_role_name(batch.get("role_id") or "") or batch.get("role_id")
+    safe_role = safe_name(role_name or "role")
+    date_stamp = time.strftime("%Y-%m-%d")
+    filename = f"standardized_{safe_role}_{date_stamp}.csv"
+
+    candidates = db.list_standardized_candidates(batch_id)
+    buffer = StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=STANDARDIZED_FIELDS)
+    writer.writeheader()
+    for candidate in candidates:
+        writer.writerow({field: candidate.get(field) or "" for field in STANDARDIZED_FIELDS})
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
