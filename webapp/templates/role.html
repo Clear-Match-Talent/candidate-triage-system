@@ -136,16 +136,28 @@
       <tbody>
       {% for batch in batches %}
         <tr>
-          <td><strong>{{ batch.name }}</strong></td>
+          <td>
+            {% if batch.status == 'pending' %}
+              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/map"><strong>{{ batch.name }}</strong></a>
+            {% elif batch.status == 'standardized' %}
+              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/review"><strong>{{ batch.name }}</strong></a>
+            {% elif batch.status == 'approved' %}
+              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/test-run"><strong>{{ batch.name }}</strong></a>
+            {% else %}
+              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/review"><strong>{{ batch.name }}</strong></a>
+            {% endif %}
+          </td>
           <td><span class="pill {{ batch.status }}">{{ batch.status }}</span></td>
           <td>{{ batch.created_at }}</td>
           <td>
-            {% if batch.status == 'uploaded' %}
+            {% if batch.status == 'pending' %}
               <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/map">Map Fields →</a>
-            {% elif batch.status == 'mapped' or batch.status == 'standardized' %}
+            {% elif batch.status == 'standardized' %}
               <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/review">Review →</a>
             {% elif batch.status == 'approved' %}
-              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/test-run">Create Test Run →</a>
+              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/test-run">Test Run →</a>
+            {% else %}
+              <a href="/roles/{{ role.id }}/batches/{{ batch.id }}/review">View →</a>
             {% endif %}
           </td>
         </tr>

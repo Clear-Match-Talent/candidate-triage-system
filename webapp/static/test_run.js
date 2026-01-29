@@ -5,8 +5,10 @@ const criteriaId = page?.dataset.criteriaId;
 const criteriaLocked = page?.dataset.criteriaLocked === '1';
 
 const startButton = document.getElementById('start-test-run');
+const stopButton = document.getElementById('stop-test-run');
 const message = document.getElementById('test-run-message');
 const progress = document.getElementById('test-run-progress');
+let currentTestRunId = null;
 const candidateCountEl = document.getElementById('candidate-count');
 const refineButton = document.getElementById('refine-criteria');
 const approveButton = document.getElementById('approve-criteria');
@@ -263,8 +265,11 @@ if (startButton && roleId && batchId) {
       }
       setMessage(`Test run started with ${payload.candidate_count} candidates.`);
       startButton.classList.remove('loading');
+      startButton.classList.add('hidden');
+      stopButton?.classList.remove('hidden');
       message?.classList.remove('loading');
       showToast('Test run started.', 'success');
+      currentTestRunId = payload.test_run_id;
       setQueryParam(payload.test_run_id);
       startPolling(payload.test_run_id);
     } catch (error) {
@@ -273,6 +278,39 @@ if (startButton && roleId && batchId) {
       startButton.disabled = false;
       startButton.classList.remove('loading');
       message?.classList.remove('loading');
+    }
+  });
+}
+
+if (stopButton) {
+  stopButton.addEventListener('click', async () => {
+    if (!currentTestRunId) {
+      return;
+    }
+    stopButton.disabled = true;
+    setMessage('Stopping test run...');
+    try {
+      const response = await fetch(`/api/test-runs/${currentTestRunId}/stop`, {
+        method: 'POST',
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to stop test run.');
+      }
+      if (pollingTimer) {
+        window.clearTimeout(pollingTimer);
+        pollingTimer = null;
+      }
+      setMessage('Test run stopped.');
+      setProgress('');
+      showToast('Test run stopped.', 'success');
+      stopButton.classList.add('hidden');
+      startButton?.classList.remove('hidden');
+      startButton && (startButton.disabled = false);
+    } catch (error) {
+      setMessage(error.message || 'Unable to stop test run.', true);
+      showToast(error.message || 'Unable to stop test run.', 'error');
+      stopButton.disabled = false;
     }
   });
 }

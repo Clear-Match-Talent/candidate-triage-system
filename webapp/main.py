@@ -334,22 +334,74 @@ def extract_json_mapping(text: str) -> Dict[str, str]:
 
 
 def suggest_mappings_for_headers(headers: List[str]) -> Dict[str, str]:
-    prompt = (
-        "Map these CSV columns to the standardized fields: "
-        f"{', '.join(STANDARDIZED_FIELDS)}.\n"
-        "Return ONLY a JSON object mapping each source column to a target field.\n"
-        "If a column should be skipped, map it to \"skip\".\n\n"
-        f"CSV columns: {headers}"
-    )
-    response = anthropic_client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=800,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    text_response = next(
-        (block.text for block in response.content if hasattr(block, "text")), ""
-    )
-    return extract_json_mapping(text_response)
+    # Limit headers to prevent context overflow
+    limited_headers = headers[:50] if len(headers) > 50 else headers
+    
+    prompt = f"""Map these CSV columns to standardized fields. Return ONLY valid JSON.
+
+Target fields: {', '.join(STANDARDIZED_FIELDS)}
+
+CSV columns to map:
+{chr(10).join(f'- {h}' for h in limited_headers)}
+
+Return a JSON object like this example:
+{{"column_name": "target_field", "another_column": "skip"}}
+
+Rules:
+- Map to: first_name, last_name, full_name, linkedin_url, location, current_company, current_title
+- Use "skip" for columns that don't match any target
+- Only map if you're confident (leave uncertain ones as "skip")
+- linkedin, LinkedIn URL, profile url -> linkedin_url
+- name, full name, candidate name -> full_name
+- first, firstname -> first_name
+- last, lastname -> last_name
+- company, employer, current company -> current_company
+- title, job title, position -> current_title
+- location, city, area -> location
+
+Return ONLY the JSON object, no explanation:"""
+
+    try:
+        response = anthropic_client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text_response = next(
+            (block.text for block in response.content if hasattr(block, "text")), ""
+        )
+        return extract_json_mapping(text_response)
+    except Exception as e:
+        # Fallback to simple pattern matching if AI fails
+        print(f"AI mapping failed: {e}, using fallback")
+        return fallback_mapping(limited_headers)
+
+
+def fallback_mapping(headers: List[str]) -> Dict[str, str]:
+    """Simple pattern matching when AI fails."""
+    result = {}
+    patterns = {
+        "linkedin_url": ["linkedin", "profile url", "linkedin url", "linkedinurl"],
+        "full_name": ["name", "full name", "fullname", "candidate name", "candidate.name"],
+        "first_name": ["first", "firstname", "first name", "candidate.firstname"],
+        "last_name": ["last", "lastname", "last name", "candidate.lastname"],
+        "location": ["location", "city", "area", "geography", "candidate.location"],
+        "current_company": ["company", "employer", "current company", "organization", "candidate.experiences.0.company"],
+        "current_title": ["title", "job title", "position", "role", "candidate.experiences.0.title"],
+    }
+    
+    for header in headers:
+        header_lower = header.lower().strip()
+        matched = False
+        for target, keywords in patterns.items():
+            if any(kw in header_lower for kw in keywords):
+                result[header] = target
+                matched = True
+                break
+        if not matched:
+            result[header] = "skip"
+    
+    return result
 
 
 def validate_mapping_payload(
@@ -519,7 +571,63 @@ def run_pipeline(run_id: str, input_paths: List[Path]) -> None:
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    # Show recent runs (latest first)
+    # Redirect to roles page as the new entry point
+    return RedirectResponse(url="/roles", status_code=302)
+
+
+@app.get("/roles", response_class=HTMLResponse)
+def roles_list(request: Request):
+    roles = db.list_roles()
+    return templates.TemplateResponse(
+        "roles.html",
+        {
+            "request": request,
+            "roles": roles,
+        },
+    )
+
+
+@app.get("/roles/{role_id}", response_class=HTMLResponse)
+def role_detail(request: Request, role_id: str):
+    role = db.get_role(role_id)
+    if not role:
+        return HTMLResponse("Role not found", status_code=404)
+    documents = db.list_role_documents(role_id)
+    criteria = db.get_latest_criteria(role_id)
+    batches = db.list_candidate_batches(role_id)
+    return templates.TemplateResponse(
+        "role.html",
+        {
+            "request": request,
+            "role": role,
+            "documents": documents,
+            "criteria": criteria,
+            "batches": batches,
+        },
+    )
+
+
+@app.get("/api/roles")
+def api_list_roles():
+    """API endpoint to list all roles."""
+    roles = db.list_roles()
+    return JSONResponse({"roles": roles})
+
+
+@app.post("/api/roles")
+def api_create_role(
+    name: str = Form(...),
+    description: str = Form(default=""),
+):
+    """API endpoint to create a new role."""
+    role_id = uuid.uuid4().hex
+    db.create_role(role_id, name, description)
+    return RedirectResponse(url=f"/roles/{role_id}", status_code=303)
+
+
+@app.get("/old", response_class=HTMLResponse)
+def old_home(request: Request):
+    # Old workflow - keep for backwards compatibility
     recent = [dict_to_runstatus(r) for r in db.list_runs(20)]
     return templates.TemplateResponse(
         "index.html",
@@ -1696,6 +1804,23 @@ def get_test_run_status(test_run_id: str):
             "bucket_counts": bucket_counts,
         }
     )
+
+
+@app.post("/api/test-runs/{test_run_id}/stop")
+def stop_test_run(test_run_id: str):
+    """Stop a running test run."""
+    test_run = db.get_test_run(test_run_id)
+    if not test_run:
+        return JSONResponse({"error": "Test run not found"}, status_code=404)
+    
+    # Mark the test run as stopped
+    db.update_test_run_status(test_run_id, "stopped")
+    
+    return JSONResponse({
+        "test_run_id": test_run_id,
+        "status": "stopped",
+        "message": "Test run stopped successfully"
+    })
 
 
 @app.post("/api/batches/{batch_id}/run-full")

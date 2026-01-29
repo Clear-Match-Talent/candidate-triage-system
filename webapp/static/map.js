@@ -129,7 +129,22 @@ const createTargetFieldRow = (targetField, isRequired = false, isCustom = false)
     row.classList.add('custom-row');
   }
 
-  // Target field cell (left column, sticky)
+  // Create mapping cells for each file FIRST (left side)
+  filesData.forEach(fileData => {
+    const cell = document.createElement('td');
+    cell.classList.add('mapping-cell');
+
+    const select = createMappingSelect(
+      fileData.filename,
+      targetField,
+      fileData.suggested_mappings
+    );
+
+    cell.appendChild(select);
+    row.appendChild(cell);
+  });
+
+  // Target field cell LAST (right column, sticky)
   const targetCell = document.createElement('td');
   targetCell.classList.add('target-cell');
   targetCell.textContent = targetField;
@@ -158,21 +173,6 @@ const createTargetFieldRow = (targetField, isRequired = false, isCustom = false)
 
   row.appendChild(targetCell);
 
-  // Create a mapping cell for each file
-  filesData.forEach(fileData => {
-    const cell = document.createElement('td');
-    cell.classList.add('mapping-cell');
-
-    const select = createMappingSelect(
-      fileData.filename,
-      targetField,
-      fileData.suggested_mappings
-    );
-
-    cell.appendChild(select);
-    row.appendChild(cell);
-  });
-
   return row;
 };
 
@@ -183,16 +183,19 @@ const renderGrid = () => {
   // Clear existing content
   gridBody.innerHTML = '';
 
-  // Clear and rebuild header (file columns)
+  // Clear and rebuild header - file columns on LEFT, target on RIGHT
+  // Remove all but the last child (target header)
   while (gridHead.childNodes.length > 1) {
-    gridHead.removeChild(gridHead.lastChild);
+    gridHead.removeChild(gridHead.firstChild);
   }
 
+  // Insert file headers BEFORE the target header (on the left)
+  const targetHeader = gridHead.querySelector('.target-header');
   filesData.forEach(fileData => {
     const th = document.createElement('th');
     th.classList.add('file-header');
     th.textContent = fileData.filename || 'Untitled';
-    gridHead.appendChild(th);
+    gridHead.insertBefore(th, targetHeader);
   });
 
   // Add standard fields

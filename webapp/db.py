@@ -151,6 +151,69 @@ def get_role_name(role_id: str) -> Optional[str]:
         conn.close()
 
 
+def list_roles() -> List[Dict[str, Any]]:
+    """List all active roles."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id, name, description, status, created_at FROM roles WHERE status = 'active' ORDER BY created_at DESC"
+        )
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def create_role(role_id: str, name: str, description: str = "") -> None:
+    """Create a new role."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO roles (id, name, description) VALUES (?, ?, ?)",
+            (role_id, name, description),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_role(role_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a role by ID."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id, name, description, status, created_at FROM roles WHERE id = ?",
+            (role_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def list_candidate_batches(role_id: str) -> List[Dict[str, Any]]:
+    """List candidate batches for a role."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id, role_id, name, status, created_at, approved_at FROM candidate_batches WHERE role_id = ? ORDER BY created_at DESC",
+            (role_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_latest_criteria(role_id: str) -> Optional[Dict[str, Any]]:
+    """Get the latest criteria for a role."""
+    return get_latest_role_criteria(role_id)
+
+
 def list_role_documents(role_id: str) -> List[Dict[str, Any]]:
     """List role documents for a role."""
     conn = get_data_connection()
@@ -1289,6 +1352,20 @@ def get_test_run(test_run_id: str) -> Optional[Dict[str, Any]]:
                 candidate_ids = []
         data["candidate_ids"] = candidate_ids
         return data
+    finally:
+        conn.close()
+
+
+def update_test_run_status(test_run_id: str, status: str) -> None:
+    """Update the status of a test run."""
+    conn = get_data_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE test_runs SET status = ? WHERE id = ?",
+            (status, test_run_id),
+        )
+        conn.commit()
     finally:
         conn.close()
 
